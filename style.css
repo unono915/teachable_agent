@@ -1,0 +1,1086 @@
+/*
+ * style.css - 티처블머신 이미지 분류 모델 실행기
+ * 교육용 웹사이트 스타일시트
+ * 
+ * 색상 시스템: DESIGN.md 기반 "Trustworthy Blue" 팔레트
+ * 폰트: Hanken Grotesk (제목/레이블) + Noto Sans KR (본문)
+ */
+
+/* =====================================================
+   CSS 변수 (디자인 토큰)
+   ===================================================== */
+:root {
+  /* Primary (주요 액션, 단계 표시) */
+  --primary: #004ac6;
+  --primary-hover: #003ea8;
+  --primary-container: #2563eb;
+  --on-primary: #ffffff;
+  --on-primary-container: #eeefff;
+
+  /* Secondary */
+  --secondary: #4b41e1;
+  --on-secondary: #ffffff;
+
+  /* Tertiary (성공 상태) */
+  --tertiary: #006242;
+  --tertiary-container: #007d55;
+  --on-tertiary: #ffffff;
+  --on-tertiary-container: #bdffdb;
+
+  /* Surface (배경 레이어) */
+  --surface: #f8f9ff;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #eff4ff;
+  --surface-container: #e5eeff;
+  --surface-container-high: #dce9ff;
+  --surface-variant: #d3e4fe;
+
+  /* On Surface (텍스트) */
+  --on-surface: #0b1c30;
+  --on-surface-variant: #434655;
+  --on-background: #0b1c30;
+  --background: #f8f9ff;
+
+  /* Outline */
+  --outline: #737686;
+  --outline-variant: #c3c6d7;
+
+  /* Error */
+  --error: #ba1a1a;
+  --error-container: #ffdad6;
+  --on-error: #ffffff;
+
+  /* Inverse */
+  --inverse-surface: #213145;
+  --inverse-on-surface: #eaf1ff;
+
+  /* 타이포그래피 */
+  --font-heading: 'Hanken Grotesk', sans-serif;
+  --font-body: 'Noto Sans KR', 'Noto Sans', sans-serif;
+
+  /* 간격 */
+  --spacing-unit: 8px;
+  --section-gap: 48px;
+  --component-gap: 16px;
+  --gutter: 24px;
+  --container-padding: 40px;
+
+  /* 그림자 */
+  --shadow-card: 0px 4px 20px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0px 8px 30px rgba(0, 0, 0, 0.1);
+  --shadow-button: 0 2px 0 0 rgba(0, 0, 0, 0.12);
+
+  /* 테두리 반경 */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* 전환 효과 */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+}
+
+/* =====================================================
+   기본 리셋 및 베이스 스타일
+   ===================================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--on-background);
+  background-color: var(--background);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  cursor: pointer;
+  font-family: var(--font-heading);
+  border: none;
+  outline: none;
+}
+
+input, select, textarea {
+  font-family: var(--font-body);
+}
+
+/* =====================================================
+   네비게이션 바
+   ===================================================== */
+.navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 100;
+  background: var(--surface-container-lowest);
+  border-bottom: 1px solid var(--outline-variant);
+  box-shadow: 0 1px 8px rgba(0,0,0,0.06);
+}
+
+.navbar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--container-padding);
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.brand-logo {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--primary);
+  letter-spacing: -0.02em;
+}
+
+.navbar-links {
+  display: flex;
+  gap: var(--gutter);
+}
+
+.nav-link {
+  font-family: var(--font-heading);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  padding-bottom: 4px;
+  border-bottom: 2px solid transparent;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.nav-link:hover,
+.nav-link.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* =====================================================
+   메인 레이아웃
+   ===================================================== */
+.main-content {
+  flex: 1;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 96px var(--container-padding) var(--section-gap);
+  display: flex;
+  flex-direction: column;
+  gap: var(--section-gap);
+}
+
+/* =====================================================
+   페이지 헤더 (제목 영역)
+   ===================================================== */
+.page-header {
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px 0 8px;
+}
+
+.page-title {
+  font-family: var(--font-heading);
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--on-background);
+  margin-bottom: 12px;
+}
+
+.page-subtitle {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--on-surface-variant);
+}
+
+/* =====================================================
+   단계 카드 (공통)
+   ===================================================== */
+.step-card {
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-xl);
+  padding: 32px;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--transition-normal);
+}
+
+.step-card:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* 활성 단계 카드: 왼쪽 파란색 테두리 */
+.step-active {
+  border-left: 4px solid var(--primary);
+}
+
+/* 단계 헤더 */
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.step-title {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--on-background);
+  flex: 1;
+}
+
+/* 단계 번호 뱃지 */
+.step-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--surface-variant);
+  color: var(--on-surface-variant);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: background var(--transition-normal), color var(--transition-normal);
+}
+
+.step-badge-active {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.step-badge-done {
+  background: var(--tertiary-container);
+  color: var(--on-tertiary);
+}
+
+/* =====================================================
+   버튼
+   ===================================================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 24px;
+  border-radius: var(--radius-md);
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Primary 버튼 (주요 액션) */
+.btn-primary {
+  background: var(--primary);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-button);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 74, 198, 0.35);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Success 버튼 (웹캠 시작) */
+.btn-success {
+  background: var(--tertiary-container);
+  color: var(--on-tertiary);
+  box-shadow: var(--shadow-button);
+}
+
+.btn-success:hover:not(:disabled) {
+  background: var(--tertiary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 98, 66, 0.3);
+}
+
+.btn-success:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.btn-success:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Ghost 버튼 (보조 액션) */
+.btn-ghost {
+  background: transparent;
+  color: var(--on-surface-variant);
+  border: 1px solid var(--outline-variant);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-container-low);
+  color: var(--on-surface);
+}
+
+.btn-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* =====================================================
+   입력 필드
+   ===================================================== */
+.text-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px 0 44px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  color: var(--on-surface);
+  background: var(--surface-container-lowest);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 74, 198, 0.12);
+}
+
+.text-input::placeholder {
+  color: var(--outline);
+}
+
+.input-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+.input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+  pointer-events: none;
+  line-height: 1;
+}
+
+/* Select (드롭다운) */
+select.form-select {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--on-surface);
+  background: var(--surface-container-lowest);
+  appearance: auto;
+  transition: border-color var(--transition-fast);
+}
+
+select.form-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 74, 198, 0.12);
+}
+
+/* 텍스트 인풋 (작은 버전) */
+input.form-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  color: var(--on-surface);
+  background: var(--surface-container-lowest);
+  transition: border-color var(--transition-fast);
+}
+
+input.form-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 74, 198, 0.12);
+}
+
+input.form-input::placeholder {
+  color: var(--outline);
+}
+
+/* =====================================================
+   Step 1: 모델 링크 입력 섹션
+   ===================================================== */
+.model-input-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+@media (max-width: 640px) {
+  .model-input-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* 상태 바 */
+.status-bar {
+  margin-top: 16px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* 대기 상태 */
+.status-idle {
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+}
+.status-idle .status-dot {
+  background: var(--outline);
+}
+
+/* 로딩 상태 */
+.status-loading {
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+}
+.status-loading .status-dot {
+  background: var(--outline);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+/* 성공 상태 */
+.status-success {
+  background: rgba(0, 98, 66, 0.1);
+  color: var(--tertiary);
+}
+.status-success .status-dot {
+  background: var(--tertiary-container);
+}
+
+/* 오류 상태 */
+.status-error {
+  background: var(--error-container);
+  color: var(--error);
+}
+.status-error .status-dot {
+  background: var(--error);
+}
+
+/* =====================================================
+   Step 2: 웹캠 및 예측 결과
+   ===================================================== */
+.webcam-controls {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.webcam-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 768px) {
+  .webcam-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 웹캠 패널 */
+.webcam-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.webcam-container {
+  aspect-ratio: 4 / 3;
+  background: var(--surface-container);
+  border: 2px dashed var(--outline-variant);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* 웹캠 활성화 시 */
+.webcam-container.active {
+  border-style: solid;
+  border-color: var(--tertiary-container);
+  background: #000;
+}
+
+/* 웹캠 캔버스 크기 조정 */
+.webcam-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+}
+
+.webcam-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--on-surface-variant);
+  text-align: center;
+  padding: 24px;
+}
+
+.placeholder-icon {
+  font-size: 48px;
+  opacity: 0.4;
+}
+
+.placeholder-text {
+  font-size: 14px;
+  color: var(--on-surface-variant);
+}
+
+/* 예측 결과 패널 */
+.prediction-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 상위 예측 결과 (크게 표시) */
+.top-prediction {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(0, 98, 66, 0.08);
+  border: 1px solid rgba(0, 98, 66, 0.25);
+  border-radius: var(--radius-md);
+  animation: fadeInSlide 0.3s ease;
+}
+
+.top-pred-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.top-pred-label-text {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--tertiary);
+  margin-bottom: 4px;
+}
+
+.top-pred-value {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--on-background);
+}
+
+/* 대기 메시지 */
+.prediction-idle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.idle-text {
+  font-size: 14px;
+  color: var(--on-surface-variant);
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* 예측 목록 */
+.prediction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 개별 예측 항목 */
+.prediction-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.prediction-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.prediction-label {
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.prediction-percent {
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--on-surface-variant);
+}
+
+.prediction-percent.top {
+  color: var(--primary);
+}
+
+/* 확률 막대 그래프 */
+.prediction-bar-track {
+  height: 8px;
+  background: var(--surface-variant);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.prediction-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--outline-variant);
+  transition: width 0.4s ease, background 0.4s ease;
+  width: 0%;
+}
+
+.prediction-bar-fill.top {
+  background: var(--primary);
+}
+
+/* =====================================================
+   Step 3: 라벨별 동작 설정
+   ===================================================== */
+.action-placeholder {
+  padding: 32px;
+  background: var(--surface-container-low);
+  border: 2px dashed var(--outline-variant);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+/* 라벨 카드 그리드 */
+.action-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+/* 개별 라벨 설정 카드 */
+.action-card {
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.action-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 16px rgba(0, 74, 198, 0.12);
+}
+
+/* 카드 제목 */
+.action-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.action-card-icon {
+  font-size: 18px;
+  color: var(--primary);
+}
+
+.action-card-label {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--on-background);
+}
+
+/* 카드 내 필드 그룹 */
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* 이미지 URL + 파일 선택 행 */
+.image-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.image-input-row .form-input {
+  flex: 1;
+}
+
+.btn-upload {
+  height: 40px;
+  width: 40px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--surface-container-low);
+  color: var(--on-surface-variant);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.btn-upload:hover {
+  background: var(--surface-variant);
+}
+
+/* 숨긴 파일 인풋 */
+.file-input-hidden {
+  display: none;
+}
+
+/* 이미지 미리보기 (action card 내) */
+.image-preview-mini {
+  width: 100%;
+  height: 80px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-container-low);
+  display: none;
+}
+
+/* =====================================================
+   Step 4: 결과 출력 영역
+   ===================================================== */
+.output-section {
+  background: linear-gradient(135deg, rgba(0, 74, 198, 0.04), rgba(75, 65, 225, 0.06));
+  border: 2px solid rgba(0, 74, 198, 0.15);
+}
+
+.output-display {
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-xl);
+  padding: 48px 40px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* 장식용 배경 원 */
+.output-display::before {
+  content: '';
+  position: absolute;
+  top: -60px;
+  right: -60px;
+  width: 200px;
+  height: 200px;
+  background: rgba(0, 74, 198, 0.05);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* 결과 문구 (크게 표시) */
+.output-message {
+  font-family: var(--font-heading);
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  animation: fadeInSlide 0.4s ease;
+  position: relative;
+  z-index: 1;
+}
+
+/* 결과 이미지 */
+.output-image-container {
+  max-width: 480px;
+  width: 100%;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--outline-variant);
+  position: relative;
+  z-index: 1;
+}
+
+.output-image {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: contain;
+  max-height: 360px;
+}
+
+/* 출력 대기 상태 */
+.output-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--on-surface-variant);
+  position: relative;
+  z-index: 1;
+}
+
+.output-idle-icon {
+  font-size: 48px;
+  opacity: 0.4;
+}
+
+.output-idle p {
+  font-size: 15px;
+  color: var(--on-surface-variant);
+  max-width: 400px;
+  line-height: 1.6;
+}
+
+/* =====================================================
+   푸터
+   ===================================================== */
+.site-footer {
+  border-top: 1px solid var(--outline-variant);
+  background: var(--surface-container-low);
+  padding: 32px 0;
+  margin-top: auto;
+}
+
+.footer-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--container-padding);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.footer-logo {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--on-surface-variant);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.footer-copy {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+.footer-links {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.footer-link {
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  text-decoration: underline;
+  transition: color var(--transition-fast);
+}
+
+.footer-link:hover {
+  color: var(--primary);
+}
+
+/* =====================================================
+   애니메이션
+   ===================================================== */
+
+/* 스피너 (로딩 상태) */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 펄스 (로딩 점) */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 페이드인 + 슬라이드업 */
+@keyframes fadeInSlide {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 결과 팝 효과 */
+@keyframes resultPop {
+  0% { transform: scale(0.92); opacity: 0; }
+  60% { transform: scale(1.03); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.result-pop {
+  animation: resultPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* 스피너 클래스 */
+.spin {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+/* 섹션 초기 애니메이션 */
+.fade-in {
+  animation: fadeInSlide 0.4s ease both;
+}
+
+/* =====================================================
+   유틸리티
+   ===================================================== */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.text-center { text-align: center; }
+.text-error { color: var(--error); }
+.text-success { color: var(--tertiary); }
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+
+/* =====================================================
+   모달 오버레이 (오류 메시지용)
+   ===================================================== */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--inverse-surface);
+  color: var(--inverse-on-surface);
+  padding: 14px 24px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-heading);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  z-index: 1000;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  opacity: 0;
+  white-space: nowrap;
+}
+
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+.toast.error {
+  background: var(--error);
+  color: var(--on-error);
+}

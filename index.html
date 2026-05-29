@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>티처블머신 이미지 분류 모델 실행기 | TeachableMentor</title>
+  <meta name="description" content="Teachable Machine에서 학습한 이미지 분류 모델을 웹캠으로 실시간 실행하는 교육용 웹사이트입니다." />
+
+  <!-- Google Fonts: Hanken Grotesk (제목/레이블) + Noto Sans KR (본문) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@600;700;800&family=Noto+Sans+KR:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- TensorFlow.js: 머신러닝 모델 실행에 필요한 라이브러리 -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <!-- Teachable Machine Image: 구글의 Teachable Machine 이미지 분류 라이브러리 -->
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+  <!-- 스타일시트 -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===================== 상단 네비게이션 바 ===================== -->
+  <nav class="navbar" id="navbar">
+    <div class="navbar-inner">
+      <div class="navbar-brand">
+        <span class="brand-logo">TeachableMentor</span>
+        <div class="navbar-links">
+          <a href="#" class="nav-link active">Models</a>
+          <a href="#" class="nav-link">Tutorials</a>
+          <a href="#" class="nav-link">Classroom</a>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ===================== 메인 콘텐츠 ===================== -->
+  <main class="main-content">
+
+    <!-- 페이지 제목 영역 -->
+    <header class="page-header" id="header">
+      <h1 class="page-title">티처블머신 이미지 분류 모델 실행기</h1>
+      <p class="page-subtitle">내가 학습시킨 모델 링크를 입력하고, 라벨별로 원하는 동작을 설정해보세요.</p>
+    </header>
+
+    <!-- ===================== Step 1: 모델 링크 입력 ===================== -->
+    <section class="step-card step-active" id="model-section">
+      <div class="step-header">
+        <div class="step-badge step-badge-active">1</div>
+        <h2 class="step-title">모델 링크 입력하기</h2>
+      </div>
+
+      <div class="model-input-row">
+        <!-- 모델 링크 입력칸 -->
+        <div class="input-wrapper">
+          <span class="input-icon">🔗</span>
+          <input
+            type="url"
+            id="model-url-input"
+            class="text-input"
+            placeholder="https://teachablemachine.withgoogle.com/models/모델ID/"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+        <!-- 모델 불러오기 버튼 -->
+        <button id="load-model-btn" class="btn btn-primary">
+          <span class="btn-icon">☁️</span>
+          모델 불러오기
+        </button>
+      </div>
+
+      <!-- 상태 메시지 영역 -->
+      <div class="status-bar" id="model-status-bar">
+        <span class="status-chip status-idle" id="model-status-chip">
+          <span class="status-dot"></span>
+          <span id="model-status-text">모델을 기다리는 중...</span>
+        </span>
+      </div>
+    </section>
+
+    <!-- ===================== Step 2: 웹캠 및 예측 결과 ===================== -->
+    <section class="step-card" id="webcam-section">
+      <div class="step-header">
+        <div class="step-badge" id="step2-badge">2</div>
+        <h2 class="step-title">웹캠 및 예측 결과</h2>
+        <div class="webcam-controls">
+          <!-- 웹캠 시작/정지 버튼 (모델 로드 후 활성화) -->
+          <button id="start-webcam-btn" class="btn btn-success" disabled>
+            <span class="btn-icon">📷</span>
+            웹캠 시작
+          </button>
+          <button id="stop-webcam-btn" class="btn btn-ghost" style="display:none;">
+            <span class="btn-icon">⏹</span>
+            웹캠 정지
+          </button>
+        </div>
+      </div>
+
+      <div class="webcam-grid">
+        <!-- 웹캠 화면 -->
+        <div class="webcam-panel">
+          <div class="webcam-container" id="webcam-container">
+            <div class="webcam-placeholder" id="webcam-placeholder">
+              <span class="placeholder-icon">📷</span>
+              <p class="placeholder-text">웹캠 화면이 여기에 표시됩니다</p>
+            </div>
+            <!-- JS에서 webcam.canvas를 여기에 삽입 -->
+          </div>
+        </div>
+
+        <!-- 예측 결과 -->
+        <div class="prediction-panel" id="prediction-panel">
+          <!-- 현재 1등 인식 결과 (크게 표시) -->
+          <div class="top-prediction" id="top-prediction" style="display:none;">
+            <span class="top-pred-icon">✅</span>
+            <div>
+              <p class="top-pred-label-text">현재 인식 결과</p>
+              <p class="top-pred-value" id="top-pred-value">-</p>
+            </div>
+          </div>
+
+          <!-- 대기 메시지 -->
+          <div class="prediction-idle" id="prediction-idle">
+            <p class="idle-text">모델을 불러오면 예측 결과가 여기에 표시됩니다.</p>
+          </div>
+
+          <!-- 라벨별 확률 목록 (JS로 동적 생성) -->
+          <div class="prediction-list" id="prediction-list">
+            <!-- JS에서 generatePredictionBars()로 채움 -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Step 3: 라벨별 동작 설정 ===================== -->
+    <section class="step-card" id="action-section">
+      <div class="step-header">
+        <div class="step-badge" id="step3-badge">3</div>
+        <h2 class="step-title">라벨별 동작 설정하기</h2>
+      </div>
+
+      <!-- 라벨 카드 컨테이너 (모델 로드 후 JS로 채움) -->
+      <div class="action-placeholder" id="action-placeholder">
+        <p class="placeholder-text">모델을 불러오면 라벨별 동작 설정 카드가 여기에 생성됩니다.</p>
+      </div>
+      <div class="action-card-grid" id="action-card-container">
+        <!-- JS의 createActionSettingsUI()로 동적 생성 -->
+      </div>
+    </section>
+
+    <!-- ===================== Step 4: 결과 확인 ===================== -->
+    <section class="step-card output-section" id="output-section">
+      <div class="step-header">
+        <div class="step-badge" id="step4-badge">4</div>
+        <h2 class="step-title">결과 확인하기</h2>
+      </div>
+
+      <!-- 결과 출력 카드 -->
+      <div class="output-display" id="output-display">
+        <!-- 문구 출력 영역 -->
+        <h3 class="output-message" id="output-message"></h3>
+
+        <!-- 이미지 출력 영역 -->
+        <div class="output-image-container" id="output-image-container" style="display:none;">
+          <img
+            id="output-image"
+            src=""
+            alt="결과 이미지"
+            class="output-image"
+          />
+        </div>
+
+        <!-- 대기 상태 안내 -->
+        <div class="output-idle" id="output-idle">
+          <span class="output-idle-icon">🎯</span>
+          <p>웹캠을 시작하고 라벨을 인식하면 여기에 결과가 나타납니다.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===================== 푸터 ===================== -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="footer-logo">TeachableMentor</span>
+        <p class="footer-copy">© 2024 TeachableMentor AI Education. Built for the classroom.</p>
+      </div>
+      <div class="footer-links">
+        <a href="#" class="footer-link">Privacy Policy</a>
+        <a href="#" class="footer-link">Terms of Service</a>
+        <a href="#" class="footer-link">Documentation</a>
+        <a href="#" class="footer-link">Support</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- JavaScript -->
+  <script src="script.js"></script>
+</body>
+</html>
