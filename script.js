@@ -547,6 +547,16 @@ async function startWebcam() {
     webcamContainer.classList.add("active");
     webcamContainer.appendChild(webcam.canvas);
 
+    // ── 핵심 비율 수정 ──────────────────────────────────────────
+    // CSS height:auto 만으로는 flex/grid 컨텍스트에서 비율이 유지되지
+    // 않을 수 있으므로, JS로 실제 canvas 크기를 읽어 컨테이너에 직접 적용.
+    // 예) 320×240 → aspect-ratio: 320/240 = 4/3
+    //     640×480 → 동일, 1280×720 → 16/9 등 실제 카메라에 맞춰짐
+    const cw = webcam.canvas.width;
+    const ch = webcam.canvas.height;
+    webcamContainer.style.aspectRatio = `${cw} / ${ch}`;
+    // ────────────────────────────────────────────────────────────
+
     // 버튼 UI 전환
     startWebcamBtn.style.display = "none";
     stopWebcamBtn.style.display  = "inline-flex";
@@ -588,6 +598,9 @@ function stopWebcam() {
   webcam.stop();
   const canvas = webcamContainer.querySelector("canvas");
   if (canvas) webcamContainer.removeChild(canvas);
+
+  // aspect-ratio 리셋 (플레이스홀더 상태로 복귀)
+  webcamContainer.style.aspectRatio = "";
 
   // UI 초기화
   webcamPlaceholder.style.display = "flex";
