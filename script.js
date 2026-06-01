@@ -34,7 +34,8 @@ const STABLE_FRAME_COUNT = 5;
 // =====================================================
 
 let model = null;          // Teachable Machine 모델 객체
-let webcam = null;         // 웹캠 객체
+let videoEl = null;        // 카메라 비디오 요소 (원본 비율 그대로 표시)
+let mediaStream = null;    // MediaStream 핸들 (정지 시 트랙 종료용)
 let maxPredictions = 0;    // 모델의 라벨 개수
 let labels = [];           // 라벨 이름 목록 (예: ["고양이", "강아지", "사람"])
 let actions = {};          // 라벨별 동작 설정 객체
@@ -525,59 +526,79 @@ function createActionSettingsUI() {
 // =====================================================
 
 /**
- * startWebcam - 웹캠을 초기화하고 예측 루프를 시작
- * 
- * 필요 조건: 모델이 먼저 로드되어 있어야 함
+ * startWebcam - 카메라를 원본 비율 그대로 시작하고 예측 루프를 시작
+ *
+ * ▶ 핵심 변경사항:
+ *   기존: tmImage.Webcam(320, 240) → 4:3 강제 → 카메라가 상하 크롭 발생
+ *   변경: getUserMedia (크기 강제 없음) → 카메라 원본 비율 그대로 표시
+ *         ML 추론은 model.predict(videoEl) 으로 직접 처리 (라이브러리가 내부 처리)
  */
 async function startWebcam() {
-  // 모델 미로드 체크
   if (!model) {
     showToast("먼저 모델을 불러와주세요.", true);
     return;
   }
 
   try {
-    // 웹캠 객체 생성 (가로 320, 세로 240, flip=true: 좌우반전)
-    webcam = new tmImage.Webcam(320, 240, true);
-    await webcam.setup();   // 브라우저 카메라 권한 요청
-    await webcam.play();    // 웹캠 시작
+    // 1. 카메라 스트림 취득 (크기 제약 없음 → 카메라 원본 해상도/비율 그대로)
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user' },
+      audio: false
+    });
 
-    // 플레이스홀더 숨기고 웹캠 캔버스 삽입
-    webcamPlaceholder.style.display = "none";
-    webcamContainer.classList.add("active");
-    webcamContainer.appendChild(webcam.canvas);
+    // 2. 비디오 요소 생성
+    videoEl = document.createElement('video');
+    videoEl.srcObject = mediaStream;
+    videoEl.setAttribute('playsinline', ''); // iOS Safari 인라인 재생
+    videoEl.muted = true;
 
-    // ── 핵심 비율 수정 ──────────────────────────────────────────
-    // CSS height:auto 만으로는 flex/grid 컨텍스트에서 비율이 유지되지
-    // 않을 수 있으므로, JS로 실제 canvas 크기를 읽어 컨테이너에 직접 적용.
-    // 예) 320×240 → aspect-ratio: 320/240 = 4/3
-    //     640×480 → 동일, 1280×720 → 16/9 등 실제 카메라에 맞춰짐
-    const cw = webcam.canvas.width;
-    const ch = webcam.canvas.height;
-    webcamContainer.style.aspectRatio = `${cw} / ${ch}`;
-    // ────────────────────────────────────────────────────────────
+    // 3. 메타데이터 로드 완료 후 재생 시작
+    await new Promise((resolve, reject) => {
+      videoEl.onloadedmetadata = () => {
+        videoEl.play().then(resolve).catch(reject);
+      };
+      videoEl.onerror = reject;
+    });
 
-    // 버튼 UI 전환
-    startWebcamBtn.style.display = "none";
-    stopWebcamBtn.style.display  = "inline-flex";
+    // 4. 비디오 CSS 스타일 (가로 100%, 세로 자연 비율, 좌우 반전)
+    videoEl.style.width = '100%';
+    videoEl.style.height = 'auto';
+    videoEl.style.display = 'block';
+    videoEl.style.transform = 'scaleX(-1)'; // 거울 모드 (셀카 방향)
+    videoEl.style.borderRadius = '10px';    // --radius-lg
 
+    // 5. 컨테이너 비율을 카메라 실제 해상도로 설정 (잘림 방지)
+    //    예: 1280×720 → 16:9, 640×480 → 4:3, 1080×1920 → 9:16 등
+    const vw = videoEl.videoWidth;
+    const vh = videoEl.videoHeight;
+    if (vw && vh) {
+      webcamContainer.style.aspectRatio = `${vw} / ${vh}`;
+      console.log(`카메라 해상도: ${vw}×${vh} (비율 ${vw}/${vh})`);
+    }
+
+    // 6. 비디오를 컨테이너에 삽입
+    webcamPlaceholder.style.display = 'none';
+    webcamContainer.classList.add('active');
+    webcamContainer.appendChild(videoEl);
+
+    // 7. 버튼 UI 전환
+    startWebcamBtn.style.display = 'none';
+    stopWebcamBtn.style.display  = 'inline-flex';
     isWebcamRunning = true;
 
-    // 예측 루프 시작
+    // 8. 예측 루프 시작
     animFrameId = window.requestAnimationFrame(loop);
 
     setStepBadge(step2Badge, false);
-    setStepBadge(step4Badge, false); // Step 4 활성화
-    showToast("웹캠이 시작되었습니다!");
+    setStepBadge(step4Badge, false);
+    showToast('웹캠이 시작되었습니다!');
 
   } catch (err) {
-    console.error("웹캠 오류:", err);
-
-    // 권한 거부 등 카메라 오류 처리
-    if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-      showToast("카메라 권한이 필요합니다. 브라우저 설정에서 카메라 권한을 허용해주세요.", true);
+    console.error('웹캠 오류:', err);
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      showToast('카메라 권한이 필요합니다. 브라우저 설정에서 카메라 권한을 허용해주세요.', true);
     } else {
-      showToast("웹캠을 시작할 수 없습니다: " + err.message, true);
+      showToast('웹캠을 시작할 수 없습니다: ' + err.message, true);
     }
   }
 }
@@ -586,7 +607,7 @@ async function startWebcam() {
  * stopWebcam - 웹캠을 정지하고 초기 상태로 되돌림
  */
 function stopWebcam() {
-  if (!webcam) return;
+  if (!mediaStream && !videoEl) return;
 
   // 예측 루프 중단
   if (animFrameId) {
@@ -594,33 +615,39 @@ function stopWebcam() {
     animFrameId = null;
   }
 
-  // 웹캠 정지 및 캔버스 제거
-  webcam.stop();
-  const canvas = webcamContainer.querySelector("canvas");
-  if (canvas) webcamContainer.removeChild(canvas);
+  // 미디어 스트림의 모든 트랙 종료 (카메라 LED 끔)
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(track => track.stop());
+    mediaStream = null;
+  }
 
-  // aspect-ratio 리셋 (플레이스홀더 상태로 복귀)
-  webcamContainer.style.aspectRatio = "";
+  // 비디오 요소 제거
+  if (videoEl) {
+    videoEl.srcObject = null;
+    if (videoEl.parentNode) videoEl.parentNode.removeChild(videoEl);
+    videoEl = null;
+  }
+
+  // 컨테이너 비율 리셋
+  webcamContainer.style.aspectRatio = '';
 
   // UI 초기화
-  webcamPlaceholder.style.display = "flex";
-  webcamContainer.classList.remove("active");
-  startWebcamBtn.style.display = "inline-flex";
-  stopWebcamBtn.style.display  = "none";
+  webcamPlaceholder.style.display = 'flex';
+  webcamContainer.classList.remove('active');
+  startWebcamBtn.style.display = 'inline-flex';
+  stopWebcamBtn.style.display  = 'none';
 
   // 예측 결과 초기화
-  topPredictionEl.style.display = "none";
-  predictionIdleEl.style.display = "flex";
+  topPredictionEl.style.display = 'none';
+  predictionIdleEl.style.display = 'flex';
 
   // 안정화 카운터 초기화
-  stableLabel = "";
+  stableLabel = '';
   stableCount = 0;
-  lastExecutedLabel = "";
+  lastExecutedLabel = '';
 
   isWebcamRunning = false;
-  webcam = null;
-
-  showToast("웹캠이 정지되었습니다.");
+  showToast('웹캠이 정지되었습니다.');
 }
 
 // =====================================================
@@ -632,12 +659,12 @@ function stopWebcam() {
  * requestAnimationFrame으로 반복 호출됨
  */
 async function loop() {
-  if (!isWebcamRunning) return;
+  if (!isWebcamRunning || !videoEl) return;
 
-  webcam.update();       // 웹캠 캔버스 갱신
-  await predict();       // 예측 실행
+  // video 요소는 브라우저가 자동으로 프레임을 갱신하므로 update() 불필요
+  await predict();
 
-  animFrameId = window.requestAnimationFrame(loop); // 다음 프레임 예약
+  animFrameId = window.requestAnimationFrame(loop);
 }
 
 /**
@@ -649,10 +676,14 @@ async function loop() {
  * - 이미 실행된 라벨이 아닌 경우에만 동작 실행
  */
 async function predict() {
-  if (!model || !webcam) return;
+  if (!model || !videoEl) return;
 
-  // 모델에 현재 웹캠 이미지 입력 → 예측 결과 배열
-  const predictions = await model.predict(webcam.canvas);
+  // 비디오가 현재 프레임 데이터를 가질 때만 추론 (readyState 2 = HAVE_CURRENT_DATA)
+  if (videoEl.readyState < 2) return;
+
+  // model.predict()는 HTMLVideoElement를 직접 받아 내부에서 전처리함
+  // → 원본 비율의 비디오에서 자동으로 정사각형 크롭 후 추론
+  const predictions = await model.predict(videoEl);
 
   // 가장 높은 확률의 라벨 찾기
   let topLabel = "";
