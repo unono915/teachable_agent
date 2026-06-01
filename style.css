@@ -541,48 +541,47 @@ input.form-input::placeholder {
   margin-left: auto;
 }
 
-.webcam-grid {
+/* ===== Step 2 + Step 4 나란히 배치 (1:1 그리드) ===== */
+.webcam-output-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  gap: var(--gutter);
+  align-items: start;  /* 각 카드가 자체 높이를 가짐 */
 }
 
-@media (max-width: 768px) {
-  .webcam-grid {
+@media (max-width: 900px) {
+  .webcam-output-grid {
     grid-template-columns: 1fr;
   }
 }
 
-/* 웹캠 패널 */
-.webcam-panel {
-  display: flex;
-  flex-direction: column;
-}
-
+/* 웹캠 컨테이너 (고정 비율 없음 → 실제 카메라 비율 그대로) */
 .webcam-container {
-  aspect-ratio: 4 / 3;
+  width: 100%;
   background: var(--surface-container);
   border: 2px dashed var(--outline-variant);
   border-radius: var(--radius-lg);
   overflow: hidden;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   position: relative;
+  min-height: 180px; /* 플레이스홀더 상태의 최소 높이 */
 }
 
 /* 웹캠 활성화 시 */
 .webcam-container.active {
+  min-height: unset;   /* 캔버스 크기에 맡김 */
   border-style: solid;
   border-color: var(--tertiary-container);
   background: #000;
 }
 
-/* 웹캠 캔버스 크기 조정 */
+/* 웹캠 캔버스: 가로 100%, 세로는 자연 비율로 자동 계산 → 잘림 없음 */
 .webcam-container canvas {
   width: 100% !important;
-  height: 100% !important;
-  object-fit: cover;
+  height: auto !important;   /* 카메라 실제 비율 유지 */
+  display: block;
   border-radius: var(--radius-lg);
 }
 
@@ -606,11 +605,12 @@ input.form-input::placeholder {
   color: var(--on-surface-variant);
 }
 
-/* 예측 결과 패널 */
+/* 예측 결과 패널 (웹캠 바로 아래에 세로 배치) */
 .prediction-panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  margin-top: 16px;
 }
 
 /* 상위 예측 결과 (크게 표시) */
@@ -844,22 +844,36 @@ input.form-input::placeholder {
 .output-section {
   background: linear-gradient(135deg, rgba(0, 74, 198, 0.04), rgba(75, 65, 225, 0.06));
   border: 2px solid rgba(0, 74, 198, 0.15);
+  /* 사이드 패널로 사용 시 높이를 Step 2와 맞추지 않고 자체 높이로 */
+  align-self: start;
+}
+
+/* Step 4 상단 안내 문구 */
+.output-prereq-note {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  background: var(--surface-container-low);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  margin-top: -8px;
 }
 
 .output-display {
   background: var(--surface-container-lowest);
   border: 1px solid var(--outline-variant);
   border-radius: var(--radius-xl);
-  padding: 48px 40px;
+  padding: 32px 24px;
   text-align: center;
   position: relative;
   overflow: hidden;
-  min-height: 200px;
+  min-height: 160px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  gap: 20px;
   box-shadow: var(--shadow-card-hover);
 }
 

@@ -80,37 +80,37 @@
       </div>
     </section>
 
-    <!-- ===================== Step 2: 웹캠 및 예측 결과 ===================== -->
-    <section class="step-card" id="webcam-section">
-      <div class="step-header">
-        <div class="step-badge" id="step2-badge">2</div>
-        <h2 class="step-title">웹캠 및 예측 결과</h2>
-        <div class="webcam-controls">
-          <!-- 웹캠 시작/정지 버튼 (모델 로드 후 활성화) -->
-          <button id="start-webcam-btn" class="btn btn-success" disabled>
-            <span class="btn-icon">📷</span>
-            웹캠 시작
-          </button>
-          <button id="stop-webcam-btn" class="btn btn-ghost" style="display:none;">
-            <span class="btn-icon">⏹</span>
-            웹캠 정지
-          </button>
-        </div>
-      </div>
+    <!-- ===== Step 2 (웹캠) + Step 4 (결과) 나란히 배치 래퍼 ===== -->
+    <div class="webcam-output-grid">
 
-      <div class="webcam-grid">
-        <!-- 웹캠 화면 -->
-        <div class="webcam-panel">
-          <div class="webcam-container" id="webcam-container">
-            <div class="webcam-placeholder" id="webcam-placeholder">
-              <span class="placeholder-icon">📷</span>
-              <p class="placeholder-text">웹캠 화면이 여기에 표시됩니다</p>
-            </div>
-            <!-- JS에서 webcam.canvas를 여기에 삽입 -->
+      <!-- ===================== Step 2: 웹캠 및 예측 결과 ===================== -->
+      <section class="step-card" id="webcam-section">
+        <div class="step-header">
+          <div class="step-badge" id="step2-badge">2</div>
+          <h2 class="step-title">웹캠 및 예측 결과</h2>
+          <div class="webcam-controls">
+            <!-- 웹캠 시작/정지 버튼 (모델 로드 후 활성화) -->
+            <button id="start-webcam-btn" class="btn btn-success" disabled>
+              <span class="btn-icon">📷</span>
+              웹캠 시작
+            </button>
+            <button id="stop-webcam-btn" class="btn btn-ghost" style="display:none;">
+              <span class="btn-icon">⏹</span>
+              웹캠 정지
+            </button>
           </div>
         </div>
 
-        <!-- 예측 결과 -->
+        <!-- 웹캠 화면 (비율 자동, 잘림 없음) -->
+        <div class="webcam-container" id="webcam-container">
+          <div class="webcam-placeholder" id="webcam-placeholder">
+            <span class="placeholder-icon">📷</span>
+            <p class="placeholder-text">웹캠 화면이 여기에 표시됩니다</p>
+          </div>
+          <!-- JS에서 webcam.canvas를 여기에 삽입 -->
+        </div>
+
+        <!-- 예측 결과 (웹캠 아래) -->
         <div class="prediction-panel" id="prediction-panel">
           <!-- 현재 1등 인식 결과 (크게 표시) -->
           <div class="top-prediction" id="top-prediction" style="display:none;">
@@ -131,8 +131,40 @@
             <!-- JS에서 generatePredictionBars()로 채움 -->
           </div>
         </div>
-      </div>
-    </section>
+      </section>
+
+      <!-- ===================== Step 4: 결과 확인 ===================== -->
+      <section class="step-card output-section" id="output-section">
+        <div class="step-header">
+          <div class="step-badge" id="step4-badge">4</div>
+          <h2 class="step-title">결과 확인하기</h2>
+        </div>
+        <p class="output-prereq-note">💡 아래 3단계에서 라벨별 동작을 설정해야 결과가 나타납니다.</p>
+
+        <!-- 결과 출력 카드 -->
+        <div class="output-display" id="output-display">
+          <!-- 문구 출력 영역 -->
+          <h3 class="output-message" id="output-message"></h3>
+
+          <!-- 이미지 출력 영역 -->
+          <div class="output-image-container" id="output-image-container" style="display:none;">
+            <img
+              id="output-image"
+              src=""
+              alt="결과 이미지"
+              class="output-image"
+            />
+          </div>
+
+          <!-- 대기 상태 안내 -->
+          <div class="output-idle" id="output-idle">
+            <span class="output-idle-icon">🎯</span>
+            <p>웹캠을 시작하고 라벨을 인식하면 여기에 결과가 나타납니다.</p>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /webcam-output-grid -->
 
     <!-- ===================== Step 3: 라벨별 동작 설정 ===================== -->
     <section class="step-card" id="action-section">
@@ -147,36 +179,6 @@
       </div>
       <div class="action-card-grid" id="action-card-container">
         <!-- JS의 createActionSettingsUI()로 동적 생성 -->
-      </div>
-    </section>
-
-    <!-- ===================== Step 4: 결과 확인 ===================== -->
-    <section class="step-card output-section" id="output-section">
-      <div class="step-header">
-        <div class="step-badge" id="step4-badge">4</div>
-        <h2 class="step-title">결과 확인하기</h2>
-      </div>
-
-      <!-- 결과 출력 카드 -->
-      <div class="output-display" id="output-display">
-        <!-- 문구 출력 영역 -->
-        <h3 class="output-message" id="output-message"></h3>
-
-        <!-- 이미지 출력 영역 -->
-        <div class="output-image-container" id="output-image-container" style="display:none;">
-          <img
-            id="output-image"
-            src=""
-            alt="결과 이미지"
-            class="output-image"
-          />
-        </div>
-
-        <!-- 대기 상태 안내 -->
-        <div class="output-idle" id="output-idle">
-          <span class="output-idle-icon">🎯</span>
-          <p>웹캠을 시작하고 라벨을 인식하면 여기에 결과가 나타납니다.</p>
-        </div>
       </div>
     </section>
 
