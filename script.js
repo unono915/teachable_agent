@@ -212,11 +212,19 @@ async function loadModel() {
   }
 
   // ── 라이브러리 로드 여부 확인 ────────────────────────────────
-  // CDN 차단(광고 차단기 등)이나 네트워크 오류로 tmImage가 로드 안 된 경우
+  // CDN 스크립트가 아직 다운로드 중이면, 에러 대신 로드 완료를 기다렸다가 진행
   if (typeof tmImage === "undefined") {
-    setModelStatus("❌ Teachable Machine 라이브러리를 불러오지 못했습니다. 페이지를 새로고침 해주세요.", "error");
-    showToast("라이브러리 로드 실패: 페이지를 새로고침(F5)해주세요.", true);
-    return;
+    setModelStatus("클릭 시 CDN 라이브러리를 로딩 중... 잊시만 기다려주세요 ⏳", "loading");
+    try {
+      await waitForLibrary(20000); // 최대 20초 대기
+      setModelStatus("라이브러리 로드 완료! 모델을 불러오는 중...", "loading");
+    } catch {
+      setModelStatus("❌ 라이브러리 로드 실패. 페이지를 새로고침(F5)해주세요.", "error");
+      showToast("새로고침(F5)하시면 해결됩니다.", true);
+      loadModelBtn.disabled = false;
+      loadModelBtn.innerHTML = '<span class="btn-icon">☁️</span> 모델 불러오기';
+      return;
+    }
   }
   // ─────────────────────────────────────────────────────────────
 
@@ -959,6 +967,33 @@ function sanitizeId(str) {
 }
 
 // =====================================================
+//  유틸리티: 라이브러리 로드 대기
+// =====================================================
+
+/**
+ * waitForLibrary - tmImage 전역변수가 정의될 때까지 대기 (200ms 주기 폴링)
+ * @param {number} timeout - 최대 대기 ms (default 20000 = 20초)
+ * @returns {Promise<void>} 로드 성공 시 resolve, 타임아웃 시 reject
+ */
+function waitForLibrary(timeout = 20000) {
+  return new Promise((resolve, reject) => {
+    if (typeof tmImage !== "undefined") { resolve(); return; }
+    const interval = 200;
+    let elapsed = 0;
+    const timer = setInterval(() => {
+      elapsed += interval;
+      if (typeof tmImage !== "undefined") {
+        clearInterval(timer);
+        resolve();
+      } else if (elapsed >= timeout) {
+        clearInterval(timer);
+        reject(new Error(`tmImage 로드 타임아웃 (${timeout}ms)`));
+      }
+    }, interval);
+  });
+}
+
+// =====================================================
 //  이벤트 리스너 등록
 // =====================================================
 
@@ -980,20 +1015,36 @@ stopWebcamBtn.addEventListener("click", stopWebcam);
 //  페이지 로드 시 초기화
 // =====================================================
 
-/**
- * 페이지가 로드되면 localStorage에서 마지막 모델 URL 복원
- */
 window.addEventListener("DOMContentLoaded", () => {
   // 마지막 입력한 모델 URL 복원
   const savedUrl = localStorage.getItem("tm_model_url");
   if (savedUrl) {
     modelUrlInput.value = savedUrl;
-    setModelStatus("이전에 사용한 모델 URL이 복원되었습니다. 불러오기 버튼을 눌러주세요.", "idle");
   }
 
   // 웹캠 버튼 초기 비활성화 (모델 로드 전)
   startWebcamBtn.disabled = true;
+  // 모델 버튼도 라이브러리 로드 전까지 비활성화
+  loadModelBtn.disabled = true;
 
-  console.log("티처블머신 실행기 준비 완료");
-  console.log(`안정화 설정: 확률 ${CONFIDENCE_THRESHOLD * 100}% 이상, ${STABLE_FRAME_COUNT}회 연속`);
+  // 라이브러리 로드 확인 (로딩 중 메시지 표시)
+  setModelStatus("TensorFlow.js 라이브러리 로딩 중... ⏳", "loading");
+
+  waitForLibrary(20000)
+    .then(() => {
+      loadModelBtn.disabled = false;
+      if (savedUrl) {
+        setModelStatus("이전에 사용한 모델 URL이 복원되었습니다. 불러오기를 눠러주세요.", "idle");
+      } else {
+        setModelStatus("준비 완료! 모델 링크를 입력해주세요.", "idle");
+      }
+      console.log("티처블머신 실행기 준비 완료");
+      console.log(`안정화 설정: 확률 ${CONFIDENCE_THRESHOLD * 100}% 이상, ${STABLE_FRAME_COUNT}회 연속`);
+    })
+    .catch(() => {
+      loadModelBtn.disabled = false;  // 에러 시에도 클릭 가능하게
+      setModelStatus("❌ CDN 라이브러리 로드 실패. 페이지를 새로고침(F5)해주세요.", "error");
+      console.error("❌ tmImage CDN 로드 20초 타임아웃");
+    });
 });
+
