@@ -211,9 +211,19 @@ async function loadModel() {
     return;
   }
 
+  // ── 라이브러리 로드 여부 확인 ────────────────────────────────
+  // CDN 차단(광고 차단기 등)이나 네트워크 오류로 tmImage가 로드 안 된 경우
+  if (typeof tmImage === "undefined") {
+    setModelStatus("❌ Teachable Machine 라이브러리를 불러오지 못했습니다. 페이지를 새로고침 해주세요.", "error");
+    showToast("라이브러리 로드 실패: 페이지를 새로고침(F5)해주세요.", true);
+    return;
+  }
+  // ─────────────────────────────────────────────────────────────
+
   const urls = normalizeModelUrl(inputUrl);
   if (!urls) {
     showToast("올바른 링크 형식이 아닙니다.", true);
+    setModelStatus("❌ 올바른 Teachable Machine 링크를 입력해주세요.", "error");
     return;
   }
 
@@ -222,10 +232,33 @@ async function loadModel() {
   loadModelBtn.disabled = true;
   loadModelBtn.innerHTML = '<span class="spin">⟳</span> 불러오는 중...';
 
+  // ── 재시도 로직 ──────────────────────────────────────────────
+  // 네트워크 불안정 등으로 실패하는 경우 최대 2회 자동 재시도
+  const MAX_RETRIES = 2;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
+    try {
+      if (attempt > 1) {
+        const waitSec = attempt - 1;
+        setModelStatus(`모델 재시도 중... (${attempt}/${MAX_RETRIES + 1}) ⏳`, "loading");
+        await new Promise(r => setTimeout(r, waitSec * 1000));
+      }
+
+      // Teachable Machine 모델 로드
+      model = await tmImage.load(urls.modelURL, urls.metadataURL);
+      lastError = null;
+      break; // 성공 시 루프 탈출
+
+    } catch (err) {
+      lastError = err;
+      console.warn(`모델 로드 시도 ${attempt} 실패:`, err);
+    }
+  }
+  // ─────────────────────────────────────────────────────────────
+
   try {
-    // Teachable Machine 모델 로드
-    // tmImage는 teachablemachine-image CDN 전역 변수
-    model = await tmImage.load(urls.modelURL, urls.metadataURL);
+    if (lastError) throw lastError; // 모든 재시도 실패 시 에러 던지기
 
     // 라벨 목록 추출
     labels = model.getClassLabels();
@@ -235,39 +268,48 @@ async function loadModel() {
     labels.forEach(label => {
       if (!actions[label]) {
         actions[label] = {
-          type: "none",       // "none" | "text" | "image"
-          text: "",           // 문구 출력 내용
-          imageUrl: "",       // 이미지 URL
-          imageDataUrl: "",   // 로컬 파일 Data URL (세션 유지)
+          type: "none",
+          text: "",
+          imageUrl: "",
+          imageDataUrl: "",
         };
       }
     });
 
     // UI 업데이트
     setModelStatus(`✅ 모델 로드 완료! 라벨 ${labels.length}개 인식됨`, "success");
-    setStepBadge(step2Badge, false); // Step 2 활성화
+    setStepBadge(step2Badge, false);
 
-    // 예측 결과 막대 UI 생성
     generatePredictionBars();
-
-    // 라벨별 동작 설정 카드 UI 생성
     createActionSettingsUI();
-
-    // localStorage에서 이전 설정 복원
     loadSettings();
 
-    // 웹캠 시작 버튼 활성화
     startWebcamBtn.disabled = false;
-
-    // 현재 모델 URL 저장
     localStorage.setItem("tm_model_url", modelUrlInput.value);
-
     showToast(`모델 로드 완료! 라벨 ${labels.length}개`);
 
   } catch (err) {
-    console.error("모델 로드 오류:", err);
-    setModelStatus("❌ 모델을 불러오지 못했습니다. 링크를 다시 확인해주세요.", "error");
-    showToast("모델을 불러오지 못했습니다. 링크가 올바른지 확인해주세요.", true);
+    console.error("모델 로드 최종 실패:", err);
+    model = null;
+
+    // 오류 유형별 안내 메시지
+    let userMsg = "";
+    const msg = (err.message || err.toString()).toLowerCase();
+
+    if (msg.includes("fetch") || msg.includes("network") || msg.includes("failed to fetch")) {
+      userMsg = "네트워크 오류: 인터넷 연결을 확인하거나 잠시 후 다시 시도해주세요.";
+    } else if (msg.includes("cors") || msg.includes("cross-origin")) {
+      userMsg = "접근 오류(CORS): 링크가 공개된 Teachable Machine 모델인지 확인해주세요.";
+    } else if (msg.includes("404") || msg.includes("not found")) {
+      userMsg = "모델을 찾을 수 없습니다. 링크가 올바른지 확인해주세요.";
+    } else if (msg.includes("json") || msg.includes("parse")) {
+      userMsg = "모델 형식 오류: 올바른 Teachable Machine 이미지 모델 링크인지 확인해주세요.";
+    } else {
+      userMsg = `오류: ${err.message || "알 수 없는 오류"}`;
+    }
+
+    setModelStatus(`❌ ${userMsg}`, "error");
+    showToast(userMsg, true);
   } finally {
     loadModelBtn.disabled = false;
     loadModelBtn.innerHTML = '<span class="btn-icon">☁️</span> 모델 불러오기';
