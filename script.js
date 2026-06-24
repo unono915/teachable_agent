@@ -1,1050 +1,654 @@
-/**
- * script.js - 티처블머신 이미지 분류 모델 실행기
- * 교육용 웹사이트 핵심 JavaScript
- *
- * 주요 기능:
- * 1. Teachable Machine 이미지 모델 로드
- * 2. 라벨 목록 자동 인식 및 설정 UI 생성
- * 3. 웹캠 실시간 예측 실행
- * 4. 안정화 조건에 따른 동작 실행 (문구 출력 / 이미지 변경)
- * 5. localStorage로 설정 저장/복원
- *
- * 교사가 수정하기 쉽도록 상수는 코드 상단에 모아두었습니다.
- */
+const CONFIG = {
+  GEM_URL: "https://gemini.google.com/gem/5a5c656ed10d?usp=sharing",
+  DEFAULT_CONFIDENCE_THRESHOLD: 0.8,
+  ENABLE_IMAGE_UPLOAD: true,
+  SAMPLE_MODEL_URL: "https://teachablemachine.withgoogle.com/models/Hf9Rr15V_/",
+};
 
-// =====================================================
-//  상수 (교사가 수정 가능한 값들)
-// =====================================================
+const STORAGE_KEYS = {
+  modelUrl: "tm_action_site_model_url",
+  settingsPrefix: "tm_action_site_settings:",
+};
 
-/**
- * CONFIDENCE_THRESHOLD: 동작을 실행하기 위한 최소 확률 (0~1)
- * 예: 0.85 = 85% 이상 확신할 때만 동작 실행
- */
-const CONFIDENCE_THRESHOLD = 0.85;
+const state = {
+  model: null,
+  labels: [],
+  actions: {},
+  threshold: CONFIG.DEFAULT_CONFIDENCE_THRESHOLD,
+  modelBaseUrl: "",
+  video: null,
+  stream: null,
+  animationId: null,
+  running: false,
+  stableLabel: "",
+  stableCount: 0,
+  lastExecutedLabel: "",
+};
 
-/**
- * STABLE_FRAME_COUNT: 같은 라벨이 연속으로 1등이어야 하는 횟수
- * 예: 5 = 5프레임 연속으로 같은 라벨이 1등이어야 동작 실행
- * (너무 자주 바뀌는 인식 결과를 안정화)
- */
-const STABLE_FRAME_COUNT = 5;
+const els = {
+  menuToggle: document.querySelector("#menu-toggle"),
+  navMenu: document.querySelector("#nav-menu"),
+  modelUrlInput: document.querySelector("#model-url-input"),
+  loadModelBtn: document.querySelector("#load-model-btn"),
+  useSampleBtn: document.querySelector("#use-sample-btn"),
+  copyModelUrlBtn: document.querySelector("#copy-model-url-btn"),
+  modelStatus: document.querySelector("#model-status"),
+  labelList: document.querySelector("#label-list"),
+  thresholdInput: document.querySelector("#threshold-input"),
+  thresholdValue: document.querySelector("#threshold-value"),
+  exportSettingsBtn: document.querySelector("#export-settings-btn"),
+  importSettingsInput: document.querySelector("#import-settings-input"),
+  resetSettingsBtn: document.querySelector("#reset-settings-btn"),
+  actionEmpty: document.querySelector("#action-empty"),
+  actionGrid: document.querySelector("#action-grid"),
+  startWebcamBtn: document.querySelector("#start-webcam-btn"),
+  stopWebcamBtn: document.querySelector("#stop-webcam-btn"),
+  webcamBox: document.querySelector("#webcam-box"),
+  webcamPlaceholder: document.querySelector("#webcam-placeholder"),
+  topResult: document.querySelector("#top-result"),
+  predictionBars: document.querySelector("#prediction-bars"),
+  outputBox: document.querySelector("#output-box"),
+  outputPlaceholder: document.querySelector("#output-placeholder"),
+  outputMessage: document.querySelector("#output-message"),
+  outputImage: document.querySelector("#output-image"),
+  toast: document.querySelector("#toast"),
+};
 
-// =====================================================
-//  전역 변수
-// =====================================================
-
-let model = null;          // Teachable Machine 모델 객체
-let videoEl = null;        // 카메라 비디오 요소 (원본 비율 그대로 표시)
-let mediaStream = null;    // MediaStream 핸들 (정지 시 트랙 종료용)
-let maxPredictions = 0;    // 모델의 라벨 개수
-let labels = [];           // 라벨 이름 목록 (예: ["고양이", "강아지", "사람"])
-let actions = {};          // 라벨별 동작 설정 객체
-
-// 안정화 조건 관련 변수
-let stableLabel = "";      // 현재 안정 상태로 판단된 라벨
-let stableCount = 0;       // 연속 카운트
-let lastExecutedLabel = ""; // 마지막으로 동작을 실행한 라벨
-
-let isWebcamRunning = false; // 웹캠 실행 여부
-let animFrameId = null;      // requestAnimationFrame 핸들
-
-// =====================================================
-//  DOM 요소 참조
-// =====================================================
-
-const modelUrlInput    = document.getElementById("model-url-input");
-const loadModelBtn     = document.getElementById("load-model-btn");
-const modelStatusChip  = document.getElementById("model-status-chip");
-const modelStatusText  = document.getElementById("model-status-text");
-
-const startWebcamBtn   = document.getElementById("start-webcam-btn");
-const stopWebcamBtn    = document.getElementById("stop-webcam-btn");
-const webcamContainer  = document.getElementById("webcam-container");
-const webcamPlaceholder = document.getElementById("webcam-placeholder");
-
-const topPredictionEl  = document.getElementById("top-prediction");
-const topPredValueEl   = document.getElementById("top-pred-value");
-const predictionIdleEl = document.getElementById("prediction-idle");
-const predictionListEl = document.getElementById("prediction-list");
-
-const actionPlaceholder   = document.getElementById("action-placeholder");
-const actionCardContainer = document.getElementById("action-card-container");
-
-const step2Badge = document.getElementById("step2-badge");
-const step3Badge = document.getElementById("step3-badge");
-const step4Badge = document.getElementById("step4-badge");
-
-const outputDisplay    = document.getElementById("output-display");
-const outputMessage    = document.getElementById("output-message");
-const outputImageContainer = document.getElementById("output-image-container");
-const outputImageEl    = document.getElementById("output-image");
-const outputIdleEl     = document.getElementById("output-idle");
-
-// =====================================================
-//  유틸리티 함수
-// =====================================================
-
-/**
- * 토스트 메시지 표시 (화면 하단에 알림)
- * @param {string} msg - 표시할 메시지
- * @param {boolean} isError - true면 오류 스타일로 표시
- */
-function showToast(msg, isError = false) {
-  // 기존 토스트 제거
-  const existing = document.querySelector(".toast");
-  if (existing) existing.remove();
-
-  const toast = document.createElement("div");
-  toast.className = "toast" + (isError ? " error" : "");
-  toast.textContent = msg;
-  document.body.appendChild(toast);
-
-  // 애니메이션 시작
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      toast.classList.add("show");
-    });
-  });
-
-  // 3초 후 사라짐
-  setTimeout(() => {
-    toast.classList.remove("show");
-    setTimeout(() => toast.remove(), 400);
-  }, 3000);
+function setStatus(message, type = "info") {
+  els.modelStatus.textContent = message;
+  els.modelStatus.dataset.type = type;
 }
 
-/**
- * 모델 상태 메시지 업데이트
- * @param {string} text - 표시할 메시지
- * @param {'idle'|'loading'|'success'|'error'} type - 상태 타입
- */
-function setModelStatus(text, type = "idle") {
-  modelStatusText.textContent = text;
-  modelStatusChip.className = `status-chip status-${type}`;
+function showToast(message, type = "info") {
+  els.toast.textContent = message;
+  els.toast.dataset.type = type;
+  els.toast.classList.add("show");
+  window.clearTimeout(showToast.timer);
+  showToast.timer = window.setTimeout(() => {
+    els.toast.classList.remove("show");
+  }, 2800);
 }
 
-/**
- * 단계 뱃지를 "완료" 또는 "활성" 상태로 변경
- * @param {HTMLElement} badge - 뱃지 DOM 요소
- * @param {boolean} done - true면 완료 스타일
- */
-function setStepBadge(badge, done = false) {
-  if (done) {
-    badge.classList.add("step-badge-done");
-    badge.classList.remove("step-badge-active");
-  } else {
-    badge.classList.add("step-badge-active");
-    badge.classList.remove("step-badge-done");
-  }
-}
-
-// =====================================================
-//  1단계: 모델 URL 정규화
-// =====================================================
-
-/**
- * normalizeModelUrl - 사용자 입력 링크를 정리하여 model.json / metadata.json URL 반환
- * 
- * 예:
- * 입력: "https://teachablemachine.withgoogle.com/models/KKIm0biUg"
- * 반환: {
- *   modelURL: "https://teachablemachine.withgoogle.com/models/KKIm0biUg/model.json",
- *   metadataURL: "https://teachablemachine.withgoogle.com/models/KKIm0biUg/metadata.json",
- *   baseURL: "https://teachablemachine.withgoogle.com/models/KKIm0biUg/"
- * }
- *
- * @param {string} inputUrl - 사용자가 입력한 모델 링크
- * @returns {{ modelURL: string, metadataURL: string, baseURL: string } | null}
- */
-function normalizeModelUrl(inputUrl) {
-  let url = inputUrl.trim();
-
-  // 빈 입력 처리
-  if (!url) return null;
-
-  // model.json으로 끝나면 baseURL 추출
-  if (url.endsWith("model.json")) {
-    url = url.replace("model.json", "");
+function normalizeModelUrl(input) {
+  const raw = input.trim();
+  if (!raw) {
+    throw new Error("Teachable Machine 모델 링크를 입력해 주세요.");
   }
 
-  // metadata.json으로 끝나면 baseURL 추출
-  if (url.endsWith("metadata.json")) {
-    url = url.replace("metadata.json", "");
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("링크 형식이 올바르지 않습니다. https:// 로 시작하는 모델 링크를 넣어 주세요.");
   }
 
-  // 마지막 슬래시 자동 추가
-  if (!url.endsWith("/")) {
-    url += "/";
+  if (url.hostname !== "teachablemachine.withgoogle.com") {
+    throw new Error("Teachable Machine 모델 링크만 사용할 수 있습니다.");
+  }
+
+  let base = url.href.replace(/(model|metadata)\.json(\?.*)?$/i, "");
+  base = base.split("?")[0].split("#")[0];
+  if (!base.endsWith("/")) base += "/";
+
+  if (!/\/models\/[^/]+\/$/i.test(new URL(base).pathname)) {
+    throw new Error("공유 링크는 /models/모델ID/ 형태여야 합니다.");
   }
 
   return {
-    modelURL:    url + "model.json",
-    metadataURL: url + "metadata.json",
-    baseURL:     url,
+    base,
+    modelURL: `${base}model.json`,
+    metadataURL: `${base}metadata.json`,
   };
 }
 
-// =====================================================
-//  2단계: 모델 로드
-// =====================================================
-
-/**
- * loadModel - Teachable Machine 이미지 모델을 불러오는 함수
- * 
- * 동작 순서:
- * 1. 입력 URL 정규화
- * 2. tmImage.load()로 모델 로드
- * 3. 라벨 목록 추출
- * 4. 라벨별 actions 객체 초기화
- * 5. 예측 결과 UI 생성
- * 6. 라벨별 동작 설정 UI 생성
- * 7. localStorage에서 저장된 설정 복원
- * 8. 웹캠 시작 버튼 활성화
- */
-async function loadModel() {
-  const inputUrl = modelUrlInput.value;
-
-  // 빈 입력 체크
-  if (!inputUrl.trim()) {
-    showToast("모델 링크를 입력해주세요.", true);
-    setModelStatus("모델 링크를 입력해주세요.", "error");
-    return;
-  }
-
-  // ── 라이브러리 로드 여부 확인 ────────────────────────────────
-  // CDN 스크립트가 아직 다운로드 중이면, 에러 대신 로드 완료를 기다렸다가 진행
-  if (typeof tmImage === "undefined") {
-    setModelStatus("클릭 시 CDN 라이브러리를 로딩 중... 잊시만 기다려주세요 ⏳", "loading");
-    try {
-      await waitForLibrary(20000); // 최대 20초 대기
-      setModelStatus("라이브러리 로드 완료! 모델을 불러오는 중...", "loading");
-    } catch {
-      setModelStatus("❌ 라이브러리 로드 실패. 페이지를 새로고침(F5)해주세요.", "error");
-      showToast("새로고침(F5)하시면 해결됩니다.", true);
-      loadModelBtn.disabled = false;
-      loadModelBtn.innerHTML = '<span class="btn-icon">☁️</span> 모델 불러오기';
+function waitForTmImage(timeout = 20000) {
+  return new Promise((resolve, reject) => {
+    if (window.tmImage) {
+      resolve();
       return;
     }
-  }
-  // ─────────────────────────────────────────────────────────────
 
-  const urls = normalizeModelUrl(inputUrl);
-  if (!urls) {
-    showToast("올바른 링크 형식이 아닙니다.", true);
-    setModelStatus("❌ 올바른 Teachable Machine 링크를 입력해주세요.", "error");
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      if (window.tmImage) {
+        window.clearInterval(timer);
+        resolve();
+      } else if (Date.now() - started > timeout) {
+        window.clearInterval(timer);
+        reject(new Error("Teachable Machine 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요."));
+      }
+    }, 150);
+  });
+}
+
+async function loadModel() {
+  let urls;
+  try {
+    urls = normalizeModelUrl(els.modelUrlInput.value);
+  } catch (error) {
+    setStatus(error.message, "error");
+    showToast(error.message, "error");
     return;
   }
 
-  // 로딩 UI 표시
-  setModelStatus("모델 불러오는 중... ⏳", "loading");
-  loadModelBtn.disabled = true;
-  loadModelBtn.innerHTML = '<span class="spin">⟳</span> 불러오는 중...';
-
-  // ── 재시도 로직 ──────────────────────────────────────────────
-  // 네트워크 불안정 등으로 실패하는 경우 최대 2회 자동 재시도
-  const MAX_RETRIES = 2;
-  let lastError = null;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
-    try {
-      if (attempt > 1) {
-        const waitSec = attempt - 1;
-        setModelStatus(`모델 재시도 중... (${attempt}/${MAX_RETRIES + 1}) ⏳`, "loading");
-        await new Promise(r => setTimeout(r, waitSec * 1000));
-      }
-
-      // Teachable Machine 모델 로드
-      model = await tmImage.load(urls.modelURL, urls.metadataURL);
-      lastError = null;
-      break; // 성공 시 루프 탈출
-
-    } catch (err) {
-      lastError = err;
-      console.warn(`모델 로드 시도 ${attempt} 실패:`, err);
-    }
-  }
-  // ─────────────────────────────────────────────────────────────
+  els.loadModelBtn.disabled = true;
+  setStatus("모델을 불러오는 중입니다.", "loading");
 
   try {
-    if (lastError) throw lastError; // 모든 재시도 실패 시 에러 던지기
+    await waitForTmImage();
+    const loadedModel = await window.tmImage.load(urls.modelURL, urls.metadataURL);
+    const labels = loadedModel.getClassLabels();
 
-    // 라벨 목록 추출
-    labels = model.getClassLabels();
-    maxPredictions = model.getTotalClasses();
+    if (!labels.length) {
+      throw new Error("라벨 정보를 찾을 수 없습니다. 모델을 다시 업로드해 주세요.");
+    }
 
-    // 라벨별 actions 객체 초기화 (기본값: 동작 없음)
-    labels.forEach(label => {
-      if (!actions[label]) {
-        actions[label] = {
-          type: "none",
-          text: "",
-          imageUrl: "",
-          imageDataUrl: "",
+    stopWebcam();
+    state.model = loadedModel;
+    state.labels = labels;
+    state.modelBaseUrl = urls.base;
+    state.actions = {};
+    labels.forEach((label) => {
+      state.actions[label] = {
+        enabled: true,
+        outputType: "text",
+        text: `${label} 라벨이 인식되었습니다.`,
+        imageUrl: "",
+        imageDataUrl: "",
+      };
+    });
+
+    restoreSettings();
+    localStorage.setItem(STORAGE_KEYS.modelUrl, urls.base);
+    els.modelUrlInput.value = urls.base;
+    renderLabels();
+    renderActionCards();
+    renderPredictionBars([]);
+    updateThresholdFromInput();
+    els.startWebcamBtn.disabled = false;
+    clearOutput();
+    setStatus(`모델을 불러왔습니다. 감지된 라벨: ${labels.join(", ")}`, "success");
+    showToast("모델 연결이 완료되었습니다.");
+  } catch (error) {
+    state.model = null;
+    els.startWebcamBtn.disabled = true;
+    setStatus(modelLoadErrorMessage(error), "error");
+    showToast("모델을 불러오지 못했습니다.", "error");
+  } finally {
+    els.loadModelBtn.disabled = false;
+  }
+}
+
+function modelLoadErrorMessage(error) {
+  const message = String(error?.message || error).toLowerCase();
+  if (message.includes("failed to fetch") || message.includes("network")) {
+    return "모델 파일을 가져오지 못했습니다. 인터넷 연결과 모델 공개 상태를 확인해 주세요.";
+  }
+  if (message.includes("404") || message.includes("not found")) {
+    return "모델을 찾을 수 없습니다. 링크가 정확한지 확인해 주세요.";
+  }
+  if (message.includes("json")) {
+    return "모델 파일 형식이 올바르지 않습니다. 이미지 분류 모델 링크인지 확인해 주세요.";
+  }
+  return error?.message || "알 수 없는 오류로 모델을 불러오지 못했습니다.";
+}
+
+function renderLabels() {
+  els.labelList.innerHTML = "";
+  state.labels.forEach((label) => {
+    const chip = document.createElement("span");
+    chip.className = "label-chip";
+    chip.textContent = label;
+    els.labelList.appendChild(chip);
+  });
+}
+
+function renderActionCards() {
+  els.actionGrid.innerHTML = "";
+  els.actionEmpty.hidden = state.labels.length > 0;
+
+  state.labels.forEach((label) => {
+    const action = state.actions[label];
+    const card = document.createElement("article");
+    card.className = "action-card";
+    card.innerHTML = `
+      <div class="action-card-header">
+        <h3></h3>
+        <label class="switch">
+          <input type="checkbox" ${action.enabled ? "checked" : ""} data-field="enabled" />
+          <span>사용</span>
+        </label>
+      </div>
+      <label class="field">
+        <span>출력 유형</span>
+        <select data-field="outputType">
+          <option value="text">문구</option>
+          <option value="image">이미지</option>
+          <option value="both">문구 + 이미지</option>
+        </select>
+      </label>
+      <label class="field text-field">
+        <span>출력 문구</span>
+        <textarea data-field="text" rows="3" placeholder="라벨이 인식되면 보여 줄 문구를 적으세요."></textarea>
+      </label>
+      <label class="field image-field">
+        <span>이미지 URL</span>
+        <input data-field="imageUrl" type="url" placeholder="https://..." />
+      </label>
+      <label class="file-drop image-upload-field">
+        <input data-field="imageFile" type="file" accept="image/*" />
+        <span>로컬 이미지 선택</span>
+      </label>
+      <div class="preview">
+        <strong>미리보기</strong>
+        <p></p>
+        <img alt="" />
+      </div>
+    `;
+
+    card.querySelector("h3").textContent = label;
+    card.querySelector('[data-field="outputType"]').value = action.outputType;
+    card.querySelector('[data-field="text"]').value = action.text;
+    card.querySelector('[data-field="imageUrl"]').value = action.imageUrl;
+
+    card.addEventListener("input", (event) => {
+      updateActionFromCard(label, card, event);
+    });
+    card.addEventListener("change", (event) => {
+      updateActionFromCard(label, card, event);
+    });
+
+    updateActionCardVisibility(card, action);
+    updatePreview(card, action);
+    els.actionGrid.appendChild(card);
+  });
+}
+
+function updateActionFromCard(label, card, event) {
+  const action = state.actions[label];
+  const field = event.target.dataset.field;
+
+  if (field === "enabled") action.enabled = event.target.checked;
+  if (field === "outputType") action.outputType = event.target.value;
+  if (field === "text") action.text = event.target.value;
+  if (field === "imageUrl") {
+    action.imageUrl = event.target.value;
+    if (event.target.value) action.imageDataUrl = "";
+  }
+  if (field === "imageFile" && event.target.files?.[0]) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      action.imageDataUrl = reader.result;
+      action.imageUrl = "";
+      card.querySelector('[data-field="imageUrl"]').value = "";
+      updatePreview(card, action);
+      saveSettings();
+    };
+    reader.readAsDataURL(event.target.files[0]);
+  }
+
+  updateActionCardVisibility(card, action);
+  updatePreview(card, action);
+  saveSettings();
+}
+
+function updateActionCardVisibility(card, action) {
+  const usesText = action.outputType === "text" || action.outputType === "both";
+  const usesImage = action.outputType === "image" || action.outputType === "both";
+  card.querySelector(".text-field").hidden = !usesText;
+  card.querySelector(".image-field").hidden = !usesImage;
+  card.querySelector(".image-upload-field").hidden = !usesImage || !CONFIG.ENABLE_IMAGE_UPLOAD;
+}
+
+function updatePreview(card, action) {
+  const previewText = card.querySelector(".preview p");
+  const previewImg = card.querySelector(".preview img");
+  const usesText = action.outputType === "text" || action.outputType === "both";
+  const usesImage = action.outputType === "image" || action.outputType === "both";
+  const src = action.imageDataUrl || action.imageUrl;
+
+  previewText.textContent = usesText ? action.text || "문구가 아직 없습니다." : "문구를 출력하지 않습니다.";
+  previewImg.hidden = !usesImage || !src;
+  if (usesImage && src) previewImg.src = src;
+}
+
+function saveSettings() {
+  if (!state.modelBaseUrl) return;
+  const payload = {
+    modelUrl: state.modelBaseUrl,
+    threshold: state.threshold,
+    actions: state.actions,
+  };
+  localStorage.setItem(`${STORAGE_KEYS.settingsPrefix}${state.modelBaseUrl}`, JSON.stringify(payload));
+}
+
+function restoreSettings() {
+  const saved = localStorage.getItem(`${STORAGE_KEYS.settingsPrefix}${state.modelBaseUrl}`);
+  if (!saved) return;
+
+  try {
+    const parsed = JSON.parse(saved);
+    state.threshold = Number(parsed.threshold) || CONFIG.DEFAULT_CONFIDENCE_THRESHOLD;
+    els.thresholdInput.value = Math.round(state.threshold * 100);
+    state.labels.forEach((label) => {
+      if (parsed.actions?.[label]) {
+        state.actions[label] = {
+          ...state.actions[label],
+          ...parsed.actions[label],
         };
       }
     });
-
-    // UI 업데이트
-    setModelStatus(`✅ 모델 로드 완료! 라벨 ${labels.length}개 인식됨`, "success");
-    setStepBadge(step2Badge, false);
-
-    generatePredictionBars();
-    createActionSettingsUI();
-    loadSettings();
-
-    startWebcamBtn.disabled = false;
-    localStorage.setItem("tm_model_url", modelUrlInput.value);
-    showToast(`모델 로드 완료! 라벨 ${labels.length}개`);
-
-  } catch (err) {
-    console.error("모델 로드 최종 실패:", err);
-    model = null;
-
-    // 오류 유형별 안내 메시지
-    let userMsg = "";
-    const msg = (err.message || err.toString()).toLowerCase();
-
-    if (msg.includes("fetch") || msg.includes("network") || msg.includes("failed to fetch")) {
-      userMsg = "네트워크 오류: 인터넷 연결을 확인하거나 잠시 후 다시 시도해주세요.";
-    } else if (msg.includes("cors") || msg.includes("cross-origin")) {
-      userMsg = "접근 오류(CORS): 링크가 공개된 Teachable Machine 모델인지 확인해주세요.";
-    } else if (msg.includes("404") || msg.includes("not found")) {
-      userMsg = "모델을 찾을 수 없습니다. 링크가 올바른지 확인해주세요.";
-    } else if (msg.includes("json") || msg.includes("parse")) {
-      userMsg = "모델 형식 오류: 올바른 Teachable Machine 이미지 모델 링크인지 확인해주세요.";
-    } else {
-      userMsg = `오류: ${err.message || "알 수 없는 오류"}`;
-    }
-
-    setModelStatus(`❌ ${userMsg}`, "error");
-    showToast(userMsg, true);
-  } finally {
-    loadModelBtn.disabled = false;
-    loadModelBtn.innerHTML = '<span class="btn-icon">☁️</span> 모델 불러오기';
+  } catch {
+    showToast("저장된 설정을 읽지 못했습니다.", "error");
   }
 }
 
-// =====================================================
-//  3단계: 예측 결과 막대 UI 생성
-// =====================================================
-
-/**
- * generatePredictionBars - 각 라벨별 확률 막대 그래프 DOM 요소 생성
- * (모델 로드 후 1회 실행, 이후 predict()에서 값만 업데이트)
- */
-function generatePredictionBars() {
-  predictionListEl.innerHTML = "";
-  predictionIdleEl.style.display = "none";
-  topPredictionEl.style.display = "flex";
-
-  labels.forEach(label => {
-    // 항목 컨테이너
-    const item = document.createElement("div");
-    item.className = "prediction-item";
-    item.id = `pred-item-${sanitizeId(label)}`;
-
-    // 헤더 행 (라벨명 + 확률%)
-    const header = document.createElement("div");
-    header.className = "prediction-item-header";
-
-    const labelEl = document.createElement("span");
-    labelEl.className = "prediction-label";
-    labelEl.textContent = label;
-
-    const percentEl = document.createElement("span");
-    percentEl.className = "prediction-percent";
-    percentEl.id = `pred-pct-${sanitizeId(label)}`;
-    percentEl.textContent = "0%";
-
-    header.appendChild(labelEl);
-    header.appendChild(percentEl);
-
-    // 막대 그래프
-    const track = document.createElement("div");
-    track.className = "prediction-bar-track";
-
-    const fill = document.createElement("div");
-    fill.className = "prediction-bar-fill";
-    fill.id = `pred-bar-${sanitizeId(label)}`;
-    fill.style.width = "0%";
-
-    track.appendChild(fill);
-    item.appendChild(header);
-    item.appendChild(track);
-    predictionListEl.appendChild(item);
-  });
-}
-
-// =====================================================
-//  4단계: 라벨별 동작 설정 UI 생성
-// =====================================================
-
-/**
- * createActionSettingsUI - labels 배열 기반으로 라벨별 설정 카드 자동 생성
- * 각 카드는 동작 선택(없음/문구/이미지), 문구 입력, 이미지 URL 입력, 파일 선택으로 구성
- */
-function createActionSettingsUI() {
-  actionPlaceholder.style.display = "none";
-  actionCardContainer.innerHTML = "";
-
-  labels.forEach(label => {
-    const safeId = sanitizeId(label);
-    const action = actions[label];
-
-    // ---- 카드 컨테이너 ----
-    const card = document.createElement("div");
-    card.className = "action-card fade-in";
-    card.id = `action-card-${safeId}`;
-
-    // ---- 카드 헤더 (라벨명) ----
-    const cardHeader = document.createElement("div");
-    cardHeader.className = "action-card-header";
-
-    const icon = document.createElement("span");
-    icon.className = "action-card-icon";
-    icon.textContent = "🏷️";
-
-    const labelName = document.createElement("h3");
-    labelName.className = "action-card-label";
-    labelName.textContent = label;
-
-    cardHeader.appendChild(icon);
-    cardHeader.appendChild(labelName);
-    card.appendChild(cardHeader);
-
-    // ---- 동작 선택 드롭다운 ----
-    const typeGroup = document.createElement("div");
-    typeGroup.className = "field-group";
-
-    const typeLabel = document.createElement("label");
-    typeLabel.className = "field-label";
-    typeLabel.textContent = "동작 선택";
-    typeLabel.htmlFor = `type-${safeId}`;
-
-    const typeSelect = document.createElement("select");
-    typeSelect.className = "form-select";
-    typeSelect.id = `type-${safeId}`;
-    typeSelect.innerHTML = `
-      <option value="none">동작 없음</option>
-      <option value="text">문구 출력</option>
-      <option value="image">이미지 변경</option>
-    `;
-    typeSelect.value = action.type;
-
-    typeGroup.appendChild(typeLabel);
-    typeGroup.appendChild(typeSelect);
-    card.appendChild(typeGroup);
-
-    // ---- 문구 입력 필드 ----
-    const textGroup = document.createElement("div");
-    textGroup.className = "field-group";
-    textGroup.id = `text-group-${safeId}`;
-    textGroup.style.display = action.type === "text" ? "flex" : "none";
-
-    const textLabel = document.createElement("label");
-    textLabel.className = "field-label";
-    textLabel.textContent = "출력할 문구";
-    textLabel.htmlFor = `text-${safeId}`;
-
-    const textInput = document.createElement("input");
-    textInput.type = "text";
-    textInput.className = "form-input";
-    textInput.id = `text-${safeId}`;
-    textInput.placeholder = "예: 고양이를 찾았습니다!";
-    textInput.value = action.text;
-
-    textGroup.appendChild(textLabel);
-    textGroup.appendChild(textInput);
-    card.appendChild(textGroup);
-
-    // ---- 이미지 설정 필드 ----
-    const imageGroup = document.createElement("div");
-    imageGroup.className = "field-group";
-    imageGroup.id = `image-group-${safeId}`;
-    imageGroup.style.display = action.type === "image" ? "flex" : "none";
-
-    const imageLabel = document.createElement("label");
-    imageLabel.className = "field-label";
-    imageLabel.textContent = "이미지 URL 또는 파일 선택";
-
-    // URL + 파일 선택 행
-    const imageRow = document.createElement("div");
-    imageRow.className = "image-input-row";
-
-    const imageUrlInput = document.createElement("input");
-    imageUrlInput.type = "text";
-    imageUrlInput.className = "form-input";
-    imageUrlInput.id = `image-url-${safeId}`;
-    imageUrlInput.placeholder = "https://...";
-    imageUrlInput.value = action.imageUrl;
-
-    // 파일 선택 버튼
-    const fileBtn = document.createElement("button");
-    fileBtn.className = "btn-upload";
-    fileBtn.type = "button";
-    fileBtn.title = "로컬 이미지 파일 선택";
-    fileBtn.textContent = "📁";
-
-    // 숨겨진 파일 인풋
-    const fileInput = document.createElement("input");
-    fileInput.type = "file";
-    fileInput.className = "file-input-hidden";
-    fileInput.id = `file-${safeId}`;
-    fileInput.accept = "image/*";
-
-    // 파일 버튼 클릭 시 파일 인풋 열기
-    fileBtn.addEventListener("click", () => fileInput.click());
-
-    // 이미지 미리보기
-    const previewImg = document.createElement("img");
-    previewImg.className = "image-preview-mini";
-    previewImg.id = `preview-${safeId}`;
-    previewImg.alt = `${label} 이미지 미리보기`;
-
-    // 기존 저장된 이미지 미리보기 표시
-    if (action.imageDataUrl) {
-      previewImg.src = action.imageDataUrl;
-      previewImg.style.display = "block";
-    } else if (action.imageUrl) {
-      previewImg.src = action.imageUrl;
-      previewImg.style.display = "block";
-    }
-
-    imageRow.appendChild(imageUrlInput);
-    imageRow.appendChild(fileBtn);
-    imageRow.appendChild(fileInput);
-
-    imageGroup.appendChild(imageLabel);
-    imageGroup.appendChild(imageRow);
-    imageGroup.appendChild(previewImg);
-    card.appendChild(imageGroup);
-
-    // ============================================
-    // 이벤트 리스너: 동작 유형 변경 시 관련 필드 표시/숨김
-    // ============================================
-    typeSelect.addEventListener("change", () => {
-      const val = typeSelect.value;
-      textGroup.style.display  = val === "text"  ? "flex" : "none";
-      imageGroup.style.display = val === "image" ? "flex" : "none";
-
-      // actions 객체 업데이트 후 저장
-      actions[label].type = val;
-      saveSettings();
-    });
-
-    // 문구 입력 변경 시 저장
-    textInput.addEventListener("input", () => {
-      actions[label].text = textInput.value;
-      saveSettings();
-    });
-
-    // 이미지 URL 변경 시 저장 + 미리보기 업데이트
-    imageUrlInput.addEventListener("input", () => {
-      actions[label].imageUrl = imageUrlInput.value;
-      // URL 기반 미리보기 (파일이 없을 때)
-      if (!actions[label].imageDataUrl && imageUrlInput.value) {
-        previewImg.src = imageUrlInput.value;
-        previewImg.style.display = "block";
-      }
-      saveSettings();
-    });
-
-    // 파일 선택 시: FileReader로 Data URL 변환 후 저장
-    fileInput.addEventListener("change", () => {
-      const file = fileInput.files[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        actions[label].imageDataUrl = e.target.result;
-        previewImg.src = e.target.result;
-        previewImg.style.display = "block";
-        // 파일 선택 시 imageDataUrl이 우선 (URL보다 앞서 사용)
-        saveSettings();
-      };
-      reader.readAsDataURL(file);
-    });
-
-    actionCardContainer.appendChild(card);
-  });
-
-  setStepBadge(step3Badge, false); // Step 3 활성화
-}
-
-// =====================================================
-//  5단계: 웹캠 제어
-// =====================================================
-
-/**
- * startWebcam - 카메라를 원본 비율 그대로 시작하고 예측 루프를 시작
- *
- * ▶ 핵심 변경사항:
- *   기존: tmImage.Webcam(320, 240) → 4:3 강제 → 카메라가 상하 크롭 발생
- *   변경: getUserMedia (크기 강제 없음) → 카메라 원본 비율 그대로 표시
- *         ML 추론은 model.predict(videoEl) 으로 직접 처리 (라이브러리가 내부 처리)
- */
-async function startWebcam() {
-  if (!model) {
-    showToast("먼저 모델을 불러와주세요.", true);
+function exportSettings() {
+  if (!state.modelBaseUrl) {
+    showToast("먼저 모델을 불러와 주세요.", "error");
     return;
   }
+  const payload = {
+    modelUrl: state.modelBaseUrl,
+    threshold: state.threshold,
+    labels: state.labels,
+    actions: state.actions,
+    exportedAt: new Date().toISOString(),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "teachable-machine-action-settings.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
+async function importSettings(file) {
+  if (!file) return;
   try {
-    // 1. 카메라 스트림 취득 (크기 제약 없음 → 카메라 원본 해상도/비율 그대로)
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user' },
-      audio: false
-    });
-
-    // 2. 비디오 요소 생성
-    videoEl = document.createElement('video');
-    videoEl.srcObject = mediaStream;
-    videoEl.setAttribute('playsinline', ''); // iOS Safari 인라인 재생
-    videoEl.muted = true;
-
-    // 3. 메타데이터 로드 완료 후 재생 시작
-    await new Promise((resolve, reject) => {
-      videoEl.onloadedmetadata = () => {
-        videoEl.play().then(resolve).catch(reject);
-      };
-      videoEl.onerror = reject;
-    });
-
-    // 4. 비디오 CSS 스타일 (가로 100%, 세로 자연 비율, 좌우 반전)
-    videoEl.style.width = '100%';
-    videoEl.style.height = 'auto';
-    videoEl.style.display = 'block';
-    videoEl.style.transform = 'scaleX(-1)'; // 거울 모드 (셀카 방향)
-    videoEl.style.borderRadius = '10px';    // --radius-lg
-
-    // 5. 컨테이너 비율을 카메라 실제 해상도로 설정 (잘림 방지)
-    //    예: 1280×720 → 16:9, 640×480 → 4:3, 1080×1920 → 9:16 등
-    const vw = videoEl.videoWidth;
-    const vh = videoEl.videoHeight;
-    if (vw && vh) {
-      webcamContainer.style.aspectRatio = `${vw} / ${vh}`;
-      console.log(`카메라 해상도: ${vw}×${vh} (비율 ${vw}/${vh})`);
+    const parsed = JSON.parse(await file.text());
+    if (parsed.modelUrl) {
+      els.modelUrlInput.value = parsed.modelUrl;
     }
-
-    // 6. 비디오를 컨테이너에 삽입
-    webcamPlaceholder.style.display = 'none';
-    webcamContainer.classList.add('active');
-    webcamContainer.appendChild(videoEl);
-
-    // 7. 버튼 UI 전환
-    startWebcamBtn.style.display = 'none';
-    stopWebcamBtn.style.display  = 'inline-flex';
-    isWebcamRunning = true;
-
-    // 8. 예측 루프 시작
-    animFrameId = window.requestAnimationFrame(loop);
-
-    setStepBadge(step2Badge, false);
-    setStepBadge(step4Badge, false);
-    showToast('웹캠이 시작되었습니다!');
-
-  } catch (err) {
-    console.error('웹캠 오류:', err);
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-      showToast('카메라 권한이 필요합니다. 브라우저 설정에서 카메라 권한을 허용해주세요.', true);
-    } else {
-      showToast('웹캠을 시작할 수 없습니다: ' + err.message, true);
+    if (parsed.threshold) {
+      state.threshold = Number(parsed.threshold);
+      els.thresholdInput.value = Math.round(state.threshold * 100);
+      updateThresholdFromInput();
     }
-  }
-}
-
-/**
- * stopWebcam - 웹캠을 정지하고 초기 상태로 되돌림
- */
-function stopWebcam() {
-  if (!mediaStream && !videoEl) return;
-
-  // 예측 루프 중단
-  if (animFrameId) {
-    window.cancelAnimationFrame(animFrameId);
-    animFrameId = null;
-  }
-
-  // 미디어 스트림의 모든 트랙 종료 (카메라 LED 끔)
-  if (mediaStream) {
-    mediaStream.getTracks().forEach(track => track.stop());
-    mediaStream = null;
-  }
-
-  // 비디오 요소 제거
-  if (videoEl) {
-    videoEl.srcObject = null;
-    if (videoEl.parentNode) videoEl.parentNode.removeChild(videoEl);
-    videoEl = null;
-  }
-
-  // 컨테이너 비율 리셋
-  webcamContainer.style.aspectRatio = '';
-
-  // UI 초기화
-  webcamPlaceholder.style.display = 'flex';
-  webcamContainer.classList.remove('active');
-  startWebcamBtn.style.display = 'inline-flex';
-  stopWebcamBtn.style.display  = 'none';
-
-  // 예측 결과 초기화
-  topPredictionEl.style.display = 'none';
-  predictionIdleEl.style.display = 'flex';
-
-  // 안정화 카운터 초기화
-  stableLabel = '';
-  stableCount = 0;
-  lastExecutedLabel = '';
-
-  isWebcamRunning = false;
-  showToast('웹캠이 정지되었습니다.');
-}
-
-// =====================================================
-//  6단계: 예측 루프
-// =====================================================
-
-/**
- * loop - 매 프레임마다 웹캠 갱신 + 예측 실행
- * requestAnimationFrame으로 반복 호출됨
- */
-async function loop() {
-  if (!isWebcamRunning || !videoEl) return;
-
-  // video 요소는 브라우저가 자동으로 프레임을 갱신하므로 update() 불필요
-  await predict();
-
-  animFrameId = window.requestAnimationFrame(loop);
-}
-
-/**
- * predict - 현재 웹캠 이미지를 모델에 넣어 예측하고 UI 업데이트
- * 
- * 안정화 조건:
- * - 최고 확률 >= CONFIDENCE_THRESHOLD (기본 85%)
- * - 같은 라벨이 STABLE_FRAME_COUNT (기본 5)회 연속 1등
- * - 이미 실행된 라벨이 아닌 경우에만 동작 실행
- */
-async function predict() {
-  if (!model || !videoEl) return;
-
-  // 비디오가 현재 프레임 데이터를 가질 때만 추론 (readyState 2 = HAVE_CURRENT_DATA)
-  if (videoEl.readyState < 2) return;
-
-  // model.predict()는 HTMLVideoElement를 직접 받아 내부에서 전처리함
-  // → 원본 비율의 비디오에서 자동으로 정사각형 크롭 후 추론
-  const predictions = await model.predict(videoEl);
-
-  // 가장 높은 확률의 라벨 찾기
-  let topLabel = "";
-  let topProb  = 0;
-
-  predictions.forEach(p => {
-    if (p.probability > topProb) {
-      topProb  = p.probability;
-      topLabel = p.className;
-    }
-  });
-
-  // 예측 결과 UI 업데이트 (막대 그래프 + 퍼센트)
-  updatePredictionUI(predictions, topLabel, topProb);
-
-  // ---- 안정화 조건 체크 ----
-  if (topLabel === stableLabel) {
-    stableCount++;
-  } else {
-    // 라벨이 바뀌면 카운터 리셋
-    stableLabel = topLabel;
-    stableCount = 1;
-  }
-
-  // 조건 만족: 확률 >= 임계값 AND 연속 횟수 >= 기준값
-  if (
-    topProb >= CONFIDENCE_THRESHOLD &&
-    stableCount >= STABLE_FRAME_COUNT
-  ) {
-    // 이미 같은 라벨로 동작을 실행한 경우는 중복 실행 안 함
-    if (topLabel !== lastExecutedLabel) {
-      lastExecutedLabel = topLabel;
-      executeAction(topLabel);
-    }
-  }
-}
-
-/**
- * updatePredictionUI - 예측 결과를 화면에 반영
- * @param {Array} predictions - 모델 예측 결과 배열
- * @param {string} topLabel - 최고 확률 라벨
- * @param {number} topProb - 최고 확률 값 (0~1)
- */
-function updatePredictionUI(predictions, topLabel, topProb) {
-  // 상위 예측 결과 (크게 표시)
-  topPredValueEl.textContent = `${topLabel} (${(topProb * 100).toFixed(1)}%)`;
-
-  // 각 라벨별 확률 막대 업데이트
-  predictions.forEach(p => {
-    const safeId  = sanitizeId(p.className);
-    const pct     = (p.probability * 100).toFixed(1);
-    const isTop   = p.className === topLabel;
-
-    // 퍼센트 텍스트
-    const pctEl = document.getElementById(`pred-pct-${safeId}`);
-    if (pctEl) {
-      pctEl.textContent = `${pct}%`;
-      pctEl.className = `prediction-percent${isTop ? " top" : ""}`;
-    }
-
-    // 확률 막대
-    const barEl = document.getElementById(`pred-bar-${safeId}`);
-    if (barEl) {
-      barEl.style.width = `${pct}%`;
-      barEl.className = `prediction-bar-fill${isTop ? " top" : ""}`;
-    }
-  });
-}
-
-// =====================================================
-//  7단계: 동작 실행
-// =====================================================
-
-/**
- * executeAction - 인식된 라벨의 설정된 동작을 결과 영역에 반영
- * @param {string} label - 실행할 라벨 이름
- */
-function executeAction(label) {
-  const action = actions[label];
-
-  // 동작 설정이 없거나 type이 "none"인 경우
-  if (!action || action.type === "none") {
-    // 결과 영역 초기화
-    outputMessage.textContent = "";
-    outputImageContainer.style.display = "none";
-    outputIdleEl.style.display = "flex";
-    return;
-  }
-
-  // Step 4 뱃지 활성화
-  setStepBadge(step4Badge, false);
-  outputIdleEl.style.display = "none";
-
-  // ---- 문구 출력 ----
-  if (action.type === "text") {
-    outputMessage.textContent = action.text || `[${label}] 동작 실행됨`;
-    outputMessage.style.display = "block";
-    outputImageContainer.style.display = "none";
-
-    // 결과 팝 애니메이션
-    outputMessage.classList.remove("result-pop");
-    void outputMessage.offsetWidth; // 리플로우로 애니메이션 재시작
-    outputMessage.classList.add("result-pop");
-  }
-
-  // ---- 이미지 변경 ----
-  if (action.type === "image") {
-    outputMessage.textContent = "";
-    outputMessage.style.display = "none";
-
-    // 우선순위: 로컬 파일 > URL > 안내 메시지
-    let imgSrc = "";
-    if (action.imageDataUrl) {
-      imgSrc = action.imageDataUrl;
-    } else if (action.imageUrl) {
-      imgSrc = action.imageUrl;
-    }
-
-    if (imgSrc) {
-      outputImageEl.src = imgSrc;
-      outputImageEl.alt = `${label} 이미지`;
-      outputImageContainer.style.display = "block";
-
-      // 이미지 팝 애니메이션
-      outputImageContainer.classList.remove("result-pop");
-      void outputImageContainer.offsetWidth;
-      outputImageContainer.classList.add("result-pop");
-    } else {
-      // 이미지가 설정되지 않은 경우
-      outputMessage.textContent = "이미지를 설정해주세요.";
-      outputMessage.style.display = "block";
-      outputImageContainer.style.display = "none";
-    }
-  }
-}
-
-// =====================================================
-//  8단계: localStorage 저장/불러오기
-// =====================================================
-
-/**
- * saveSettings - 현재 라벨별 동작 설정을 localStorage에 저장
- * 저장 내용: type, text, imageUrl (imageDataUrl은 용량 이슈로 선택적 저장)
- */
-function saveSettings() {
-  try {
-    // imageDataUrl은 용량이 크므로 별도 저장 (localStorage 용량 제한 고려)
-    const settingsToSave = {};
-    labels.forEach(label => {
-      const a = actions[label];
-      settingsToSave[label] = {
-        type:     a.type,
-        text:     a.text,
-        imageUrl: a.imageUrl,
-        // imageDataUrl은 세션 내에서만 유지 (새로고침 후 유지 안 됨, PRD 9조)
-      };
-    });
-
-    localStorage.setItem("tm_actions", JSON.stringify(settingsToSave));
-  } catch (err) {
-    console.warn("설정 저장 중 오류:", err);
-  }
-}
-
-/**
- * loadSettings - localStorage에서 이전 설정을 불러와 현재 라벨에 적용
- * 라벨 이름이 일치하는 설정만 복원 (다른 모델의 설정은 무시)
- */
-function loadSettings() {
-  try {
-    const savedStr = localStorage.getItem("tm_actions");
-    if (!savedStr) return;
-
-    const saved = JSON.parse(savedStr);
-
-    labels.forEach(label => {
-      if (saved[label]) {
-        // 기존 actions 객체에 저장된 값 덮어쓰기
-        actions[label].type     = saved[label].type     || "none";
-        actions[label].text     = saved[label].text     || "";
-        actions[label].imageUrl = saved[label].imageUrl || "";
-
-        // UI에 값 반영
-        const safeId = sanitizeId(label);
-
-        const typeSelect = document.getElementById(`type-${safeId}`);
-        if (typeSelect) typeSelect.value = actions[label].type;
-
-        const textInput = document.getElementById(`text-${safeId}`);
-        if (textInput) textInput.value = actions[label].text;
-
-        const imageUrlInput = document.getElementById(`image-url-${safeId}`);
-        if (imageUrlInput) imageUrlInput.value = actions[label].imageUrl;
-
-        // 이미지 URL이 있으면 미리보기 표시
-        if (actions[label].imageUrl) {
-          const previewImg = document.getElementById(`preview-${safeId}`);
-          if (previewImg) {
-            previewImg.src = actions[label].imageUrl;
-            previewImg.style.display = "block";
-          }
+    if (parsed.actions && state.labels.length) {
+      state.labels.forEach((label) => {
+        if (parsed.actions[label]) {
+          state.actions[label] = { ...state.actions[label], ...parsed.actions[label] };
         }
-
-        // 동작 유형에 따라 필드 표시/숨김
-        const textGroup  = document.getElementById(`text-group-${safeId}`);
-        const imageGroup = document.getElementById(`image-group-${safeId}`);
-        if (textGroup)  textGroup.style.display  = actions[label].type === "text"  ? "flex" : "none";
-        if (imageGroup) imageGroup.style.display = actions[label].type === "image" ? "flex" : "none";
-      }
-    });
-  } catch (err) {
-    console.warn("설정 불러오기 중 오류:", err);
+      });
+      renderActionCards();
+      saveSettings();
+    }
+    showToast("설정을 불러왔습니다.");
+  } catch {
+    showToast("JSON 설정 파일을 읽지 못했습니다.", "error");
+  } finally {
+    els.importSettingsInput.value = "";
   }
 }
 
-// =====================================================
-//  유틸리티: ID 안전 문자열 변환
-// =====================================================
-
-/**
- * sanitizeId - 라벨 이름을 DOM ID로 안전하게 사용할 수 있도록 변환
- * 한글, 특수문자 등을 영문/숫자/하이픈으로 변환
- * @param {string} str - 원본 라벨 이름
- * @returns {string} DOM ID로 사용 가능한 문자열
- */
-function sanitizeId(str) {
-  return str
-    .replace(/\s+/g, "_")                  // 공백 → 언더스코어
-    .replace(/[^a-zA-Z0-9_\u3131-\uD79D]/g, "") // 허용 문자 외 제거 (한글 포함)
-    .replace(/^[^a-zA-Z_]/, "_");          // 첫 글자가 숫자면 언더스코어 추가
+function resetSettings() {
+  if (!state.modelBaseUrl) {
+    showToast("초기화할 모델 설정이 없습니다.", "error");
+    return;
+  }
+  localStorage.removeItem(`${STORAGE_KEYS.settingsPrefix}${state.modelBaseUrl}`);
+  state.labels.forEach((label) => {
+    state.actions[label] = {
+      enabled: true,
+      outputType: "text",
+      text: `${label} 라벨이 인식되었습니다.`,
+      imageUrl: "",
+      imageDataUrl: "",
+    };
+  });
+  renderActionCards();
+  clearOutput();
+  showToast("현재 모델의 행동 설정을 초기화했습니다.");
 }
 
-// =====================================================
-//  유틸리티: 라이브러리 로드 대기
-// =====================================================
+async function startWebcam() {
+  if (!state.model) {
+    showToast("먼저 모델을 불러와 주세요.", "error");
+    return;
+  }
 
-/**
- * waitForLibrary - tmImage 전역변수가 정의될 때까지 대기 (200ms 주기 폴링)
- * @param {number} timeout - 최대 대기 ms (default 20000 = 20초)
- * @returns {Promise<void>} 로드 성공 시 resolve, 타임아웃 시 reject
- */
-function waitForLibrary(timeout = 20000) {
-  return new Promise((resolve, reject) => {
-    if (typeof tmImage !== "undefined") { resolve(); return; }
-    const interval = 200;
-    let elapsed = 0;
-    const timer = setInterval(() => {
-      elapsed += interval;
-      if (typeof tmImage !== "undefined") {
-        clearInterval(timer);
-        resolve();
-      } else if (elapsed >= timeout) {
-        clearInterval(timer);
-        reject(new Error(`tmImage 로드 타임아웃 (${timeout}ms)`));
-      }
-    }, interval);
+  try {
+    state.stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+      audio: false,
+    });
+    state.video = document.createElement("video");
+    state.video.srcObject = state.stream;
+    state.video.autoplay = true;
+    state.video.muted = true;
+    state.video.playsInline = true;
+    await state.video.play();
+
+    els.webcamPlaceholder.hidden = true;
+    els.webcamBox.appendChild(state.video);
+    els.webcamBox.classList.add("active");
+    els.startWebcamBtn.disabled = true;
+    els.stopWebcamBtn.disabled = false;
+    state.running = true;
+    state.stableLabel = "";
+    state.stableCount = 0;
+    state.lastExecutedLabel = "";
+    state.animationId = requestAnimationFrame(predictLoop);
+    showToast("웹캠을 시작했습니다.");
+  } catch (error) {
+    const msg = error?.name === "NotAllowedError"
+      ? "카메라 권한이 필요합니다. 브라우저 주소창의 권한 설정을 확인해 주세요."
+      : "웹캠을 시작하지 못했습니다.";
+    showToast(msg, "error");
+  }
+}
+
+function stopWebcam() {
+  if (state.animationId) cancelAnimationFrame(state.animationId);
+  state.animationId = null;
+  state.running = false;
+  if (state.stream) {
+    state.stream.getTracks().forEach((track) => track.stop());
+    state.stream = null;
+  }
+  if (state.video) {
+    state.video.remove();
+    state.video = null;
+  }
+  els.webcamPlaceholder.hidden = false;
+  els.webcamBox.classList.remove("active");
+  els.startWebcamBtn.disabled = !state.model;
+  els.stopWebcamBtn.disabled = true;
+}
+
+async function predictLoop() {
+  if (!state.running || !state.video || !state.model) return;
+  if (state.video.readyState >= 2) {
+    try {
+      const predictions = await state.model.predict(state.video);
+      handlePredictions(predictions);
+    } catch (error) {
+      console.warn("prediction failed", error);
+    }
+  }
+  state.animationId = requestAnimationFrame(predictLoop);
+}
+
+function handlePredictions(predictions) {
+  const top = predictions.reduce((best, current) => (
+    current.probability > best.probability ? current : best
+  ), predictions[0]);
+
+  renderPredictionBars(predictions, top.className);
+  els.topResult.textContent = `${top.className} / ${(top.probability * 100).toFixed(1)}%`;
+
+  if (top.probability < state.threshold) {
+    els.topResult.textContent += " - 확실하지 않음";
+    state.stableLabel = "";
+    state.stableCount = 0;
+    return;
+  }
+
+  if (top.className === state.stableLabel) {
+    state.stableCount += 1;
+  } else {
+    state.stableLabel = top.className;
+    state.stableCount = 1;
+  }
+
+  if (state.stableCount >= 4 && state.lastExecutedLabel !== top.className) {
+    state.lastExecutedLabel = top.className;
+    executeAction(top.className);
+  }
+}
+
+function renderPredictionBars(predictions, topLabel = "") {
+  els.predictionBars.innerHTML = "";
+  const source = predictions.length
+    ? predictions
+    : state.labels.map((label) => ({ className: label, probability: 0 }));
+
+  source.forEach((prediction) => {
+    const percent = Math.round(prediction.probability * 1000) / 10;
+    const item = document.createElement("div");
+    item.className = `prediction-item ${prediction.className === topLabel ? "top" : ""}`;
+    item.innerHTML = `
+      <div class="prediction-meta">
+        <span></span>
+        <strong>${percent.toFixed(1)}%</strong>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:${percent}%"></div></div>
+    `;
+    item.querySelector("span").textContent = prediction.className;
+    els.predictionBars.appendChild(item);
   });
 }
 
-// =====================================================
-//  이벤트 리스너 등록
-// =====================================================
-
-// 모델 불러오기 버튼 클릭
-loadModelBtn.addEventListener("click", loadModel);
-
-// 모델 링크 입력칸에서 Enter 키 입력
-modelUrlInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") loadModel();
-});
-
-// 웹캠 시작 버튼 클릭
-startWebcamBtn.addEventListener("click", startWebcam);
-
-// 웹캠 정지 버튼 클릭
-stopWebcamBtn.addEventListener("click", stopWebcam);
-
-// =====================================================
-//  페이지 로드 시 초기화
-// =====================================================
-
-window.addEventListener("DOMContentLoaded", () => {
-  // 마지막 입력한 모델 URL 복원
-  const savedUrl = localStorage.getItem("tm_model_url");
-  if (savedUrl) {
-    modelUrlInput.value = savedUrl;
+function executeAction(label) {
+  const action = state.actions[label];
+  if (!action || !action.enabled) {
+    clearOutput(`${label} 라벨은 행동 사용이 꺼져 있습니다.`);
+    return;
   }
 
-  // 웹캠 버튼 초기 비활성화 (모델 로드 전)
-  startWebcamBtn.disabled = true;
-  // 모델 버튼도 라이브러리 로드 전까지 비활성화
-  loadModelBtn.disabled = true;
+  const usesText = action.outputType === "text" || action.outputType === "both";
+  const usesImage = action.outputType === "image" || action.outputType === "both";
+  const src = action.imageDataUrl || action.imageUrl;
 
-  // 라이브러리 로드 확인 (로딩 중 메시지 표시)
-  setModelStatus("TensorFlow.js 라이브러리 로딩 중... ⏳", "loading");
+  els.outputPlaceholder.hidden = true;
+  els.outputMessage.hidden = !usesText;
+  els.outputImage.hidden = !usesImage || !src;
 
-  waitForLibrary(20000)
-    .then(() => {
-      loadModelBtn.disabled = false;
-      if (savedUrl) {
-        setModelStatus("이전에 사용한 모델 URL이 복원되었습니다. 불러오기를 눠러주세요.", "idle");
-      } else {
-        setModelStatus("준비 완료! 모델 링크를 입력해주세요.", "idle");
-      }
-      console.log("티처블머신 실행기 준비 완료");
-      console.log(`안정화 설정: 확률 ${CONFIDENCE_THRESHOLD * 100}% 이상, ${STABLE_FRAME_COUNT}회 연속`);
-    })
-    .catch(() => {
-      loadModelBtn.disabled = false;  // 에러 시에도 클릭 가능하게
-      setModelStatus("❌ CDN 라이브러리 로드 실패. 페이지를 새로고침(F5)해주세요.", "error");
-      console.error("❌ tmImage CDN 로드 20초 타임아웃");
+  if (usesText) {
+    els.outputMessage.textContent = action.text || `${label} 라벨이 인식되었습니다.`;
+  }
+  if (usesImage && src) {
+    els.outputImage.src = src;
+  }
+  if (usesImage && !src && !usesText) {
+    els.outputMessage.hidden = false;
+    els.outputMessage.textContent = "이미지 URL이나 파일을 설정해 주세요.";
+  }
+
+  els.outputBox?.classList?.remove("pop");
+  requestAnimationFrame(() => els.outputBox?.classList?.add("pop"));
+}
+
+function clearOutput(message = "행동이 실행되면 결과가 여기에 나타납니다.") {
+  els.outputPlaceholder.hidden = false;
+  els.outputPlaceholder.textContent = message;
+  els.outputMessage.hidden = true;
+  els.outputMessage.textContent = "";
+  els.outputImage.hidden = true;
+  els.outputImage.removeAttribute("src");
+  els.topResult.textContent = "아직 예측 결과가 없습니다.";
+}
+
+function updateThresholdFromInput() {
+  const value = Number(els.thresholdInput.value);
+  state.threshold = value / 100;
+  els.thresholdValue.textContent = `${value}%`;
+  saveSettings();
+}
+
+async function copyText(text, successMessage) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(successMessage);
+  } catch {
+    showToast("복사하지 못했습니다. 브라우저 권한을 확인해 주세요.", "error");
+  }
+}
+
+function openConfiguredUrl(key) {
+  const url = CONFIG[key];
+  if (!url) {
+    showToast("아직 링크가 설정되지 않았습니다. CONFIG에서 주소를 입력해 주세요.", "error");
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function bindEvents() {
+  els.menuToggle.addEventListener("click", () => {
+    const expanded = els.menuToggle.getAttribute("aria-expanded") === "true";
+    els.menuToggle.setAttribute("aria-expanded", String(!expanded));
+    els.navMenu.classList.toggle("open", !expanded);
+  });
+
+  document.querySelectorAll("[data-scroll-target]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelector(`#${button.dataset.scrollTarget}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      els.navMenu.classList.remove("open");
+      els.menuToggle.setAttribute("aria-expanded", "false");
     });
-});
+  });
 
+  document.querySelectorAll("[data-open-url]").forEach((button) => {
+    button.addEventListener("click", () => openConfiguredUrl(button.dataset.openUrl));
+  });
+
+  els.loadModelBtn.addEventListener("click", loadModel);
+  els.modelUrlInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") loadModel();
+  });
+  els.useSampleBtn.addEventListener("click", () => {
+    els.modelUrlInput.value = CONFIG.SAMPLE_MODEL_URL;
+    showToast("예시 모델 링크를 넣었습니다.");
+  });
+  els.copyModelUrlBtn.addEventListener("click", () => {
+    const url = state.modelBaseUrl || els.modelUrlInput.value.trim();
+    if (!url) {
+      showToast("복사할 모델 링크가 없습니다.", "error");
+      return;
+    }
+    copyText(url, "모델 링크를 복사했습니다.");
+  });
+  els.thresholdInput.addEventListener("input", updateThresholdFromInput);
+  els.exportSettingsBtn.addEventListener("click", exportSettings);
+  els.importSettingsInput.addEventListener("change", (event) => importSettings(event.target.files?.[0]));
+  els.resetSettingsBtn.addEventListener("click", resetSettings);
+  els.startWebcamBtn.addEventListener("click", startWebcam);
+  els.stopWebcamBtn.addEventListener("click", stopWebcam);
+}
+
+function init() {
+  bindEvents();
+  const savedUrl = localStorage.getItem(STORAGE_KEYS.modelUrl);
+  els.modelUrlInput.value = savedUrl && savedUrl !== CONFIG.SAMPLE_MODEL_URL ? savedUrl : "";
+  els.thresholdInput.value = Math.round(CONFIG.DEFAULT_CONFIDENCE_THRESHOLD * 100);
+  updateThresholdFromInput();
+  waitForTmImage()
+    .then(() => setStatus("준비 완료. 모델 링크를 입력해 주세요.", "info"))
+    .catch((error) => setStatus(error.message, "error"));
+}
+
+window.addEventListener("beforeunload", stopWebcam);
+window.addEventListener("DOMContentLoaded", init);
